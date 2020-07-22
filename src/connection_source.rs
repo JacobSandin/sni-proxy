@@ -1,23 +1,19 @@
-
 use mio::{
-    event::{Event,Source},
-    Interest, 
-    Registry, 
-    Token,
+    event::{Event, Source},
     net::TcpStream,
+    Interest, Registry, Token,
 };
 
 use rustls;
 use rustls::Session;
 
-
 //TODO: We are going to start using this
 //use httparse::{Header, Request, EMPTY_HEADER};
 use std::{
     io,
-    io::{Read,Write},
-    str::from_utf8, 
+    io::{Read, Write},
     net,
+    str::from_utf8,
 };
 
 #[derive(Debug)]
@@ -80,7 +76,11 @@ impl ConnectionSource {
     }
 
     fn do_tls_write_and_handle_error(&mut self) {
-        let rc = self.tls_session.as_mut().unwrap().write_tls(&mut self.server_stream);
+        let rc = self
+            .tls_session
+            .as_mut()
+            .unwrap()
+            .write_tls(&mut self.server_stream);
         if rc.is_err() {
             println!("write TLS handle error failed {:?}", rc);
             self.closing = true;
@@ -93,9 +93,9 @@ impl ConnectionSource {
         registry: &Registry,
         event: &Event,
         server_token: Token,
-    ) -> io::Result<bool> {
+    ) -> Option<bool> {
         if self.closed {
-            return Ok(true);
+            return Some(true);
         }
 
         let response = format!(
@@ -112,7 +112,12 @@ impl ConnectionSource {
 
         if event.is_readable() && self.do_tls && self.tls_session.as_mut().unwrap().wants_read() {
             while self.tls_session.as_mut().unwrap().wants_read() {
-                match self.tls_session.as_mut().unwrap().read_tls(&mut self.server_stream) {
+                match self
+                    .tls_session
+                    .as_mut()
+                    .unwrap()
+                    .read_tls(&mut self.server_stream)
+                {
                     Ok(0) => {
                         match self.tls_session.as_mut().unwrap().process_new_packets() {
                             Err(e) => {
@@ -162,10 +167,14 @@ impl ConnectionSource {
                     String::new()
                 }
             };
-            print!("TLS hostname: {}",tls_host);
+            print!("TLS hostname: {}", tls_host);
 
             if self.tls_session.as_mut().unwrap().wants_write() {
-                let ret = self.tls_session.as_mut().unwrap().write_tls(&mut self.server_stream);
+                let ret = self
+                    .tls_session
+                    .as_mut()
+                    .unwrap()
+                    .write_tls(&mut self.server_stream);
                 if ret.is_err() {
                     let e = ret.unwrap_err().kind();
                     match e {
@@ -216,7 +225,10 @@ impl ConnectionSource {
                     Err(ref err) if err.kind() == io::ErrorKind::Interrupted => {
                         break;
                     }
-                    Err(err) => return Err(err),
+                    Err(err) => {
+                        trace!("Got error in normal tls: {:?}", err);
+                        return Some(true);
+                    }
                 }
             }
 
@@ -228,21 +240,34 @@ impl ConnectionSource {
         }
 
         if event.is_writable() && self.do_tls && !self.tls_session.as_mut().unwrap().wants_write() {
-
             println!("Writing tls: \r\n{}", response);
-            match self.tls_session.as_mut().unwrap().write(response.as_bytes()) {
+            match self
+                .tls_session
+                .as_mut()
+                .unwrap()
+                .write(response.as_bytes())
+            {
                 Ok(n) if n < response.len() => {
                     println!("Error in tls write: {:?}", io::ErrorKind::WriteZero);
                     self.closing = true;
                 }
-                Ok(_) => registry.reregister(self, event.token(), Interest::READABLE)?,
+                Ok(_) => {
+                 let res = registry.reregister(self, event.token(), Interest::READABLE);
+                                     if res.is_err() {
+                        //TODO Cleanup?
+                        error!("Got error after register: {:?}",res.unwrap_err());
+                    }
+                }
                 Err(ref err) if err.kind() == io::ErrorKind::WouldBlock => {
                     //   connection_closed=true;
                 }
                 Err(ref err) if err.kind() == io::ErrorKind::Interrupted => {
                     self.handle_connection_event(registry, event, self.server_token)?;
                 }
-                Err(err) => return Err(err),
+                Err(err) => {
+                    trace!("Got error in normal tls: {:?}", err);
+                    return Some(true);
+                }
             }
         }
 
@@ -269,8 +294,8 @@ impl ConnectionSource {
                     Err(ref err) if err.kind() == io::ErrorKind::Interrupted => continue,
                     Err(err) => {
                         println!("Error no tls reading: {:?}", err);
-                        self.closing = true;      
-                        break;                 
+                        self.closing = true;
+                        break;
                     }
                 }
             }
@@ -285,21 +310,34 @@ impl ConnectionSource {
             //Not TLS
             println!("Writing notls: \r\n{}", response);
             match self.server_stream.write(response.as_bytes()) {
-                Ok(n) if n < response.len() =>{
+                Ok(n) if n < response.len() => {
                     // return Err(io::ErrorKind::WriteZero.into()),
-                    println!("Ok n: {}",n);
-                    self.closing=true;
-                },
+                    println!("Ok n: {}", n);
+                    self.closing = true;
+                }
                 Ok(n) => {
-                    println!("Ok n: {}",n);
-                    registry.reregister(&mut self.server_stream, event.token(), Interest::READABLE)?;
-                    return Ok(false);
+                    println!("Ok n: {}", n);
+                    let res = registry.reregister(
+                        &mut self.server_stream,
+                        event.token(),
+                        Interest::READABLE,
+                    );
+                    if res.is_err() {
+                        //TODO Cleanup?
+                        error!("Got error after register: {:?}",res.unwrap_err());
+                    }
+                    
+                    return Some(false);
                 }
                 Err(ref err) if err.kind() == io::ErrorKind::WouldBlock => {}
                 Err(ref err) if err.kind() == io::ErrorKind::Interrupted => {
                     //TODO: Why
-                    self.register(registry ,server_token, Interest::READABLE)?;
-                    return Ok(false);
+                    let res = self.register(registry, server_token, Interest::READABLE);
+                    if res.is_err() {
+                        //TODO Cleanup?
+                        error!("Got error after register: {:?}",res.unwrap_err());
+                    }
+                    return Some(false);
                 }
                 // Other errors we'll consider fatal.
                 Err(err) => {
@@ -321,9 +359,9 @@ impl ConnectionSource {
                 self.tls_session.as_mut().unwrap().send_close_notify();
             }
             let _ = self.server_stream.shutdown(net::Shutdown::Both);
-            self.deregister(registry).expect("Gurka");     
-            self.closed;       
-            return Ok(true);
+            self.deregister(registry).expect("Gurka");
+            self.closed;
+            return Some(true);
         } else {
             self.reregister(
                 registry,
@@ -332,7 +370,7 @@ impl ConnectionSource {
             )
             .expect("Reregister");
             println!("did we register?");
-            Ok(false)
+            Some(false)
         }
     }
 }

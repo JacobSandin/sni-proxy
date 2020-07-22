@@ -36,21 +36,24 @@ impl MyResolvesServerCertUsingSNI {
         }
     }
     pub fn add(&mut self, name: &str, ck: sign::CertifiedKey) -> Result<(), TLSError> {
-        let checked_name = webpki::DNSNameRef::try_from_ascii_str(name)
-            .map_err(|_| TLSError::General("Bad DNS name".into()))?;
+
+        //TODO: Needed?
+        // let checked_name = webpki::DNSNameRef::try_from_ascii_str(name)
+        //     .map_err(|_| TLSError::General("Bad DNS name".into()))?;
 
         if self.by_name.is_empty() {
             self.by_name.insert(String::from("__default__"), ck.clone());
         }
 
-        let _err = match ck.cross_check_end_entity_cert(Some(checked_name))
-        {
-            Ok(_) => (),
-            Err(e) => {
-                println!("Error testing cert error ({}): {}",name,e.to_string());
-                ()
-            },
-        };
+        //TODO: Needed?
+        // let _err = match ck.cross_check_end_entity_cert(Some(checked_name))
+        // {
+        //     Ok(_) => (),
+        //     Err(e) => {
+        //         println!("Error testing cert error ({}): {}",name,e.to_string());
+        //         ()
+        //     },
+        // };
 
         //println!("Efter");
         self.by_name.insert(name.into(), ck);
