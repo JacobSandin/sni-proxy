@@ -5,15 +5,17 @@ use mio::{
 };
 
 use rustls;
-use rustls::Session;
+use rustls::{Session, TLSError};
 
-//TODO: We are going to start using this
+//TODO: We{@} are going to start using this
 //use httparse::{Header, Request, EMPTY_HEADER};
 use std::{
     io,
     io::{Read, Write},
     net,
     str::from_utf8,
+    thread::{sleep, Thread},
+    time::Duration,
 };
 
 #[derive(Debug)]
@@ -40,6 +42,7 @@ impl Source for ConnectionSource {
         token: Token,
         interests: Interest,
     ) -> io::Result<()> {
+        trace!("Registering using ConnectionSource function");
         self.server_stream.register(registry, token, interests)
     }
 
@@ -49,10 +52,12 @@ impl Source for ConnectionSource {
         token: Token,
         interests: Interest,
     ) -> io::Result<()> {
+        trace!("Reregistering using ConnectionSource function");
         self.server_stream.reregister(registry, token, interests)
     }
 
     fn deregister(&mut self, registry: &Registry) -> io::Result<()> {
+        trace!("Deregistering using ConnectionSource function");
         self.server_stream.deregister(registry)
     }
 }
@@ -66,6 +71,188 @@ const BODY: &[u8] = b"<html>
 ";
 
 impl ConnectionSource {
+    fn local_reader(&mut self, registry: &Registry) -> Option<bool> {
+        if self.serve_path.is_some() {
+            trace!("Read already given path, returning.");
+            return Some(true);
+        }
+        trace!("Read Checking read if closed {}", self.closing);
+
+        let mut received_data = Vec::with_capacity(4096);
+        loop {
+            trace!("Read Checking read if closed {}", self.closing);
+            // if self.closing || self.closed {
+            //     Some(false);
+            // }
+            let mut buf = [0; 256];
+
+            trace!("Read Reading buffer as tls={}", self.do_tls);
+            let res: Result<usize, std::io::Error> = if self.do_tls {
+                trace!("Read using tls_session to read");
+                self.tls_session.as_mut().unwrap().read(&mut buf)
+            } else {
+                trace!("Read using server_stream to read");
+                self.server_stream.read(&mut buf)
+            };
+
+            trace!("Read Checking read errors");
+            if res.is_err() {
+                match res.unwrap_err().kind() {
+                    io::ErrorKind::WouldBlock => {
+                        trace!("Read Would block");
+                        //   connection_closed=true;
+                        break;
+                    }
+                    io::ErrorKind::Interrupted => {
+                        trace!("Read Interupted");
+                        continue;
+                        //break;
+                    }
+                    err => {
+                        trace!("Read Unknown error : {:?}", err);
+                        self.closing = true;
+                        return Some(false);
+                    }
+                }
+            } else {
+                trace!("Read checking OK");
+                match res.unwrap() {
+                    0 => {
+                        trace!(
+                            "Read Read Error in read: {:?} closing? {}",
+                            io::ErrorKind::WriteZero,
+                            self.closed || self.closing
+                        );
+                        break;
+                        // if !self.do_tls {
+                        //     self.closing = true;
+                        //     return Some(false);
+                        // }
+                    }
+                    n => {
+                        trace!("Read Transfering read buffer to datacollecter received_data");
+                        received_data.extend_from_slice(&buf[..n]);
+                    }
+                }
+            }
+        }
+
+        if String::from_utf8_lossy(&received_data).contains("GET /") {
+            self.serve_path = Some(String::from("/"));
+        } else {
+            self.serve_path = None;
+        };
+        debug!(
+            "Read Received data: {}\r\n\r\n and using path {:?}\r\n",
+            String::from_utf8_lossy(&received_data).trim_end(),
+            self.serve_path
+        );
+
+        if let Ok(str_buf) = from_utf8(&received_data) {
+            debug!("Read Received data: {:?}", &str_buf);
+        } else {
+            debug!("Read Received (none UTF-8) data: {:?}", &received_data);
+        }
+
+        if self.serve_path.is_some() && !self.closing && !self.closed {
+            trace!("Read Reregistering normal write to read");
+            self.reregister(registry, self.server_token, Interest::WRITABLE)
+                .expect("Reregister");
+        } else if self.do_tls && self.tls_session.as_mut().unwrap().wants_write() {
+            trace!("Read Reregistering normal to read/write for tls");
+            self.reregister(
+                registry,
+                self.server_token,
+                Interest::READABLE | Interest::WRITABLE,
+            )
+            .expect("Reregister");
+        } else {
+            self.reregister(registry, self.server_token, Interest::WRITABLE)
+                .expect("Reregister");
+        }
+
+        return Some(true);
+    }
+
+    fn local_writer(&mut self, event: &Event, registry: &Registry) -> Option<bool> {
+        if self.serve_path.is_none() {
+            trace!("Write path none, returning.");
+            return Some(true);
+        }
+
+        trace!("Write Creating default responce");
+        let response = format!(
+            "HTTP/1.1 200 OK\r\nServer: JS-imProxy-0.0.1\r\nContent-Length: {}\r\n\r\n{}",
+            BODY.len(),
+            std::str::from_utf8(BODY).unwrap().to_string()
+        );
+
+        trace!("Write response: \r\n{}", response);
+
+        let ret = if self.do_tls {
+            self.tls_session
+                .as_mut()
+                .unwrap()
+                .write(response.as_bytes())
+        } else {
+            self.server_stream.write(response.as_bytes())
+        };
+
+        match ret {
+            Ok(n) if n < response.len() => {
+                // return Err(io::ErrorKind::WriteZero.into()),
+                trace!("Write Wrote zerro n: {}", n);
+                self.closing = true;
+                return Some(false);
+            }
+            Ok(n) => {
+                trace!("Write sent {} of bytes", n);
+                // self.closing = true;
+                // return Some(false);
+            }
+            Err(ref err) if err.kind() == io::ErrorKind::WouldBlock => {
+                trace!("Write Error wouldblock ignoring");
+            }
+            Err(ref err) if err.kind() == io::ErrorKind::Interrupted => {
+                //TODO: Why
+                trace!("Write registering for mor write as we were interupted.");
+                let res = self.register(registry, event.token(), Interest::WRITABLE);
+                if res.is_err() {
+                    //TODO Cleanup?
+                    error!("Got error after register: {:?}", res.unwrap_err());
+                    return Some(false);
+                }
+                return Some(true);
+            }
+            // Other errors we'll consider fatal.
+            Err(err) => {
+                error!("Unknown error no writing: {:?}", err);
+                self.closing = true;
+                return Some(false);
+            }
+        }
+        if !self.closing && !self.closed {
+            if self.do_tls && self.tls_session.as_mut().unwrap().wants_write() {
+                trace!("Reregistering tls READ/WRITE");
+                self.reregister(
+                    registry,
+                    self.server_token,
+                    Interest::READABLE | Interest::WRITABLE,
+                )
+                .expect("Reregister");
+            } else {
+                trace!("Reregistering for READ");
+                self.reregister(registry, self.server_token, Interest::READABLE)
+                    .expect("Reregister");
+            }
+        }
+        self.serve_path = None;
+        return Some(true);
+    }
+    //  }
+}
+
+impl ConnectionSource {
     pub fn init_register(
         &mut self,
         registry: &Registry,
@@ -75,35 +262,12 @@ impl ConnectionSource {
         self.register(registry, token, interests)
     }
 
-    fn do_tls_write_and_handle_error(&mut self) {
-        let rc = self
-            .tls_session
-            .as_mut()
-            .unwrap()
-            .write_tls(&mut self.server_stream);
-        if rc.is_err() {
-            println!("write TLS handle error failed {:?}", rc);
-            self.closing = true;
-            return;
-        }
-    }
-
     pub fn handle_connection_event<'a>(
         &mut self,
         registry: &Registry,
         event: &Event,
-        server_token: Token,
     ) -> Option<bool> {
-        if self.closed {
-            return Some(true);
-        }
-
-        let response = format!(
-            "HTTP/1.1 200 OK\r\nServer: JS-imProxy-0.0.1\r\nContent-Length: {}\r\n\r\n{}",
-            BODY.len(),
-            std::str::from_utf8(BODY).unwrap().to_string()
-        );
-
+        let mut success: bool = true;
         /*
 
             Read/Write TLS and HTTPS
@@ -111,7 +275,9 @@ impl ConnectionSource {
         */
 
         if event.is_readable() && self.do_tls && self.tls_session.as_mut().unwrap().wants_read() {
+            trace!("tls_session (read) Unwrapping tls_session wants_read");
             while self.tls_session.as_mut().unwrap().wants_read() {
+                trace!("tls_session (read) Matching read_tls");
                 match self
                     .tls_session
                     .as_mut()
@@ -119,86 +285,182 @@ impl ConnectionSource {
                     .read_tls(&mut self.server_stream)
                 {
                     Ok(0) => {
+                        trace!("tls_session (read) unwrap process_new_packages.");
                         match self.tls_session.as_mut().unwrap().process_new_packets() {
+                           Err(e) if e == TLSError::AlertReceived(rustls::internal::msgs::enums::AlertDescription::CertificateUnknown) => {
+                                error!("tls_session (read) 1.Certificate unknown we are ignoring for adresses without certs yet.++++++++++++++++++++++++++++++++++");
+                                //panic!("wtf");
+                            },
                             Err(e) => {
-                                println!("Error processing TLS packages {:?} ", e);
-                                self.do_tls_write_and_handle_error();
+                                error!(
+                                    "tls_session (read) Unknown error:processing TLS packages (ignoring) {:?} ",
+                                    e
+                                );
+                                //    self.do_tls_write_and_handle_error();
                                 self.closing = true;
                                 break;
                             }
                             _ => {}
                         }
+                        self.closing = true;
                         break;
                     }
                     Ok(n) => {
-                        println!("Read tls bytes {}", n);
+                        trace!("tls_session Read tls bytes {}", n);
                         match self.tls_session.as_mut().unwrap().process_new_packets() {
-                            Err(e) => {
-                                println!("Error processing TLS packages {:?} ", e);
+                            Err(e) if e == TLSError::AlertReceived(rustls::internal::msgs::enums::AlertDescription::CertificateUnknown) => {
+                                error!("tls_session (read) 2. Certificate unknown we are ignoring for adresses without certs yet. -------------------------------");
+                                //panic!("wtf");
+                            },
+/* TODO: CertificateUnknown
+      typ: Alert,
+        version: TLSv1_3,
+        payload: Alert(
+            AlertMessagePayload {
+                level: Fatal,
+                description: CertificateUnknown,
+            },
+        ),
+    }
+*/                          Err(e) => {
+                                error!("tls_session (read) Error read processing TLS packages {:?} ", e);
                                 //TODO: Not needed here it seem
                                 // self.do_tls_write_and_handle_error();
-                                // connection_closed = true;
+                                self.closing = true;
                                 break;
                             }
                             _ => {}
                         }
                     }
-                    Err(ref err) if err.kind() == io::ErrorKind::WouldBlock => break,
-                    Err(ref err) if err.kind() == io::ErrorKind::Interrupted => continue,
+                    Err(ref err) if err.kind() == io::ErrorKind::WouldBlock => {
+                        trace!("tls_session (read) Connection WouldBlock breaking.");
+                        break;
+                    }
+                    Err(ref err) if err.kind() == io::ErrorKind::Interrupted => {
+                        trace!("tls_session (read) Connection interupted, continue.");
+                        continue;
+                    }
                     Err(ref err) if err.kind() == io::ErrorKind::ConnectionAborted => {
-                        self.closing = true;
+                        error!("tls_session (read) Connection aborted");
+                        //TODO test closing again
+                        //self.closing = true;
+                        break;
                     }
 
-                    Err(e) => println!("Error tls read: {:?}", e),
+                    Err(e) => {
+                        error!("tls_session (read) Unknown error tls read: {:?}", e);
+                        break;
+                    }
                 }
             }
             if self.tls_session.as_mut().unwrap().is_handshaking() {
-                println!("Read still handshaking! +++");
+                debug!("tls_session (read) still handshaking! +++");
             } else {
-                println!("Read not handshaking! ---");
+                debug!("tls_session (read) not handshaking! ---");
+            }
+            if !self.closing && !self.closed {
+                if self.tls_session.as_mut().unwrap().wants_read()
+                    && self.tls_session.as_mut().unwrap().wants_write()
+                {
+                    trace!("tls_session (read) Reregistering for READ/WRITE");
+                    self.reregister(
+                        registry,
+                        self.server_token,
+                        Interest::READABLE | Interest::WRITABLE,
+                    )
+                    .expect("Reregister");
+                } else if self.tls_session.as_mut().unwrap().wants_read() {
+                    trace!("tls_session (read) Reregistering for READ");
+                    self.reregister(registry, self.server_token, Interest::READABLE)
+                        .expect("Reregister");
+                } else if self.tls_session.as_mut().unwrap().wants_write() {
+                    trace!("tls_session (read) Reregistering for WRITE");
+                    self.reregister(registry, self.server_token, Interest::WRITABLE)
+                        .expect("Reregister");
+                } else {
+                    trace!("tls_session (read) Reregistering for WRITE");
+                    self.reregister(registry, self.server_token, Interest::WRITABLE)
+                        .expect("Reregister");
+                }
             }
         }
 
         if event.is_writable() && self.do_tls && self.tls_session.as_mut().unwrap().wants_write() {
+            trace!("tls_session (write) Geting SNI hostname if set.");
             let tls_host = match self.tls_session.as_mut().unwrap().get_sni_hostname() {
                 Some(s) => String::from(s),
                 None => {
-                    println!("Tls host None");
+                    trace!("tls_session (write) Tls host None");
                     String::new()
                 }
             };
-            print!("TLS hostname: {}", tls_host);
+            debug!("tls_session (write) TLS hostname: {}", tls_host);
 
+            trace!("Unwrapping tls_session (write) for wants_write");
             if self.tls_session.as_mut().unwrap().wants_write() {
+                trace!("tls_session (write) Doing write_tls on server_stream");
                 let ret = self
                     .tls_session
                     .as_mut()
                     .unwrap()
                     .write_tls(&mut self.server_stream);
                 if ret.is_err() {
+                    trace!("tls_session (write) We got an error writing tls");
                     let e = ret.unwrap_err().kind();
                     match e {
                         io::ErrorKind::ConnectionAborted => {
+                            error!("tls_session (write) Connection aborted");
                             self.closing = true;
+                            return Some(false);
                         }
                         io::ErrorKind::WouldBlock => {
+                            trace!("tls_session (write) Error WouldBlock");
+                            //return Some(true);
                             //connection_closed=true;
                         }
-                        _ => println!("new Error {:?}", e),
+                        _ => {
+                            error!("tls_session (write) Unknown error {:?}", e);
+                        }
                     }
                 } else {
                     let u = ret.ok().unwrap();
+                    trace!("tls_session (write) Got usize {}", u);
                     if u == 0 {
-                        self.closing = true;
+                        // self.closing = true;
+                        // return Some(false);
                     }
-                    println!("write_tls usize: {:?} ", 0);
+                }
+            }
+            if !self.closing && !self.closed {
+                if self.tls_session.as_mut().unwrap().wants_read()
+                    && self.tls_session.as_mut().unwrap().wants_write()
+                {
+                    trace!("tls_session (write) Reregistering for READ/WRITE");
+                    self.reregister(
+                        registry,
+                        self.server_token,
+                        Interest::READABLE | Interest::WRITABLE,
+                    )
+                    .expect("Reregister");
+                } else if self.tls_session.as_mut().unwrap().wants_read() {
+                    trace!("tls_session (write) Reregistering for READ");
+                    self.reregister(registry, self.server_token, Interest::READABLE)
+                        .expect("Reregister");
+                } else if self.tls_session.as_mut().unwrap().wants_write() {
+                    trace!("tls_session (write) Reregistering for WRITE");
+                    self.reregister(registry, self.server_token, Interest::WRITABLE)
+                        .expect("Reregister");
+                } else {
+                    trace!("tls_session (write) Reregistering for READ");
+                    self.reregister(registry, self.server_token, Interest::READABLE)
+                        .expect("Reregister");
                 }
             }
 
             if self.tls_session.as_mut().unwrap().is_handshaking() {
-                println!("Write Still handshaking!");
+                debug!("tls_session (write) Still handshaking!");
             } else {
-                println!("Write Not handshaking");
+                debug!("tls_session (write) Not handshaking");
             }
         }
 
@@ -207,143 +469,19 @@ impl ConnectionSource {
             Read/Write TLS and HTTPS
 
         */
-
-        if event.is_readable() && self.do_tls && !self.tls_session.as_mut().unwrap().wants_read() {
-            let mut received_data = Vec::with_capacity(4096);
-            loop {
-                let mut buf = [0; 256];
-                match self.tls_session.as_mut().unwrap().read(&mut buf) {
-                    Ok(0) => {
-                        println!("Error in tls write: {:?}", io::ErrorKind::WriteZero);
-                        self.closing = true;
-                        break;
-                    }
-                    Ok(n) => received_data.extend_from_slice(&buf[..n]),
-                    Err(ref err) if err.kind() == io::ErrorKind::WouldBlock => {
-                        //   connection_closed=true;
-                    }
-                    Err(ref err) if err.kind() == io::ErrorKind::Interrupted => {
-                        break;
-                    }
-                    Err(err) => {
-                        trace!("Got error in normal tls: {:?}", err);
-                        return Some(true);
-                    }
-                }
-            }
-
-            if let Ok(str_buf) = from_utf8(&received_data) {
-                println!("Received data: {}", str_buf.trim_end());
-            } else {
-                println!("Received (none UTF-8) data: {:?}", &received_data);
-            }
-        }
-
-        if event.is_writable() && self.do_tls && !self.tls_session.as_mut().unwrap().wants_write() {
-            println!("Writing tls: \r\n{}", response);
-            match self
-                .tls_session
-                .as_mut()
-                .unwrap()
-                .write(response.as_bytes())
+        if event.is_readable() {
+            if self.tls_session.as_mut().is_none()
+                || !self.tls_session.as_mut().unwrap().is_handshaking()
             {
-                Ok(n) if n < response.len() => {
-                    println!("Error in tls write: {:?}", io::ErrorKind::WriteZero);
-                    self.closing = true;
-                }
-                Ok(_) => {
-                 let res = registry.reregister(self, event.token(), Interest::READABLE);
-                                     if res.is_err() {
-                        //TODO Cleanup?
-                        error!("Got error after register: {:?}",res.unwrap_err());
-                    }
-                }
-                Err(ref err) if err.kind() == io::ErrorKind::WouldBlock => {
-                    //   connection_closed=true;
-                }
-                Err(ref err) if err.kind() == io::ErrorKind::Interrupted => {
-                    self.handle_connection_event(registry, event, self.server_token)?;
-                }
-                Err(err) => {
-                    trace!("Got error in normal tls: {:?}", err);
-                    return Some(true);
-                }
+                success = self.local_reader(registry).unwrap();
             }
         }
 
-        /*
-
-            Read/Write PLAIN (with no TLS or HTTPS)
-
-        */
-
-        if event.is_readable() && !self.do_tls {
-            let mut received_data = Vec::with_capacity(4096);
-            loop {
-                if self.closing || self.closed {
-                    break;
-                }
-                let mut buf = [0; 256];
-                match self.server_stream.read(&mut buf) {
-                    Ok(0) => {
-                        self.closing = true;
-                        break;
-                    }
-                    Ok(n) => received_data.extend_from_slice(&buf[..n]),
-                    Err(ref err) if err.kind() == io::ErrorKind::WouldBlock => break,
-                    Err(ref err) if err.kind() == io::ErrorKind::Interrupted => continue,
-                    Err(err) => {
-                        println!("Error no tls reading: {:?}", err);
-                        self.closing = true;
-                        break;
-                    }
-                }
-            }
-            if let Ok(str_buf) = from_utf8(&received_data) {
-                println!("Received data: {}", str_buf.trim_end());
-            } else {
-                println!("Received (none UTF-8) data: {:?}", &received_data);
-            }
-        }
-
-        if event.is_writable() && !self.do_tls {
-            //Not TLS
-            println!("Writing notls: \r\n{}", response);
-            match self.server_stream.write(response.as_bytes()) {
-                Ok(n) if n < response.len() => {
-                    // return Err(io::ErrorKind::WriteZero.into()),
-                    println!("Ok n: {}", n);
-                    self.closing = true;
-                }
-                Ok(n) => {
-                    println!("Ok n: {}", n);
-                    let res = registry.reregister(
-                        &mut self.server_stream,
-                        event.token(),
-                        Interest::READABLE,
-                    );
-                    if res.is_err() {
-                        //TODO Cleanup?
-                        error!("Got error after register: {:?}",res.unwrap_err());
-                    }
-                    
-                    return Some(false);
-                }
-                Err(ref err) if err.kind() == io::ErrorKind::WouldBlock => {}
-                Err(ref err) if err.kind() == io::ErrorKind::Interrupted => {
-                    //TODO: Why
-                    let res = self.register(registry, server_token, Interest::READABLE);
-                    if res.is_err() {
-                        //TODO Cleanup?
-                        error!("Got error after register: {:?}",res.unwrap_err());
-                    }
-                    return Some(false);
-                }
-                // Other errors we'll consider fatal.
-                Err(err) => {
-                    println!("Error no tls writing: {:?}", err);
-                    self.closing = true;
-                }
+        if event.is_writable() {
+            if self.tls_session.as_mut().is_none()
+                || !self.tls_session.as_mut().unwrap().is_handshaking()
+            {
+                success = self.local_writer(event, registry).unwrap();
             }
         }
 
@@ -353,24 +491,20 @@ impl ConnectionSource {
 
         */
 
-        if self.closing {
-            println!("Connection closed");
+        if  !success {
+            panic!("Why");
+        }
+
+        if self.closed || self.closing {
+            trace!("closing connection");
             if self.do_tls {
                 self.tls_session.as_mut().unwrap().send_close_notify();
             }
             let _ = self.server_stream.shutdown(net::Shutdown::Both);
             self.deregister(registry).expect("Gurka");
-            self.closed;
-            return Some(true);
-        } else {
-            self.reregister(
-                registry,
-                self.server_token,
-                Interest::READABLE | Interest::WRITABLE,
-            )
-            .expect("Reregister");
-            println!("did we register?");
-            Some(false)
+            self.closed = true;
+            return Some(false);
         }
+        return Some(true);
     }
 }

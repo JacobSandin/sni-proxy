@@ -106,15 +106,15 @@ fn main() -> Result<(), Box<dyn Error>> {
                 }
                 token => {
                     info!("New token action: {:?}",event);
-                    let done: bool = if let Some(my_session) = connections.get_mut(&token) {
+                    let success: bool = if let Some(my_session) = connections.get_mut(&token) {
                         trace!("Found session, and calling it: {:?}",my_session);
                         my_session
-                            .handle_connection_event(poll.registry(), event, token)
+                            .handle_connection_event(poll.registry(), event)
                             .expect("WTF!!!!!!!!!")
                     } else {
                         false
                     };
-                    if done {
+                    if !success {
                         trace!("Removing connection with token: {}",&token.0);
                         connections.remove(&token);
                     }
@@ -199,7 +199,7 @@ fn do_server_accept(
                 match reg.unwrap().init_register(
                     poll.registry(),
                     token,
-                    Interest::READABLE | Interest::WRITABLE,
+                    Interest::READABLE,
                 ) {
                     Ok(a) => a,
                     Err(e) => {
