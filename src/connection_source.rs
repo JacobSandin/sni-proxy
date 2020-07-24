@@ -478,7 +478,7 @@ impl ConnectionSource {
                             err => {
                                 trace!("ForRead Unknown error : {:?}", err);
                                 self.closing = true;
-                                return Some(false);
+                                //return Some(false);
                             }
                         }
                     } else {
@@ -523,6 +523,7 @@ impl ConnectionSource {
         trace!("MAIN closing: ({})", self.closing);
 
         if fwd_ok_r || fwd_ok_w {
+            self.reregister(registry, token, Interest::READABLE | Interest::WRITABLE).ok();
             return Some(true);
         }
 
