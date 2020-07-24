@@ -16,13 +16,11 @@ mod sni_resolver;
 use crate::connection_source::ConnectionSource;
 use crate::sni_resolver::{load_certs, load_private_key, load_resolver};
 
-use std::{collections::HashMap, error::Error, io, sync::Arc};
+use std::{collections::HashMap, error::Error, io, sync::Arc, cell::{RefCell}};
 
 use mio::{net::TcpListener, Events, Interest, Poll, Token};
 
 use rustls::{self, NoClientAuth};
-
-use log::Level;
 
 const HTTPS_SERVER: Token = Token(0);
 const HTTP_SERVER: Token = Token(1);
@@ -30,23 +28,40 @@ const SNI_TLS_CERTS: bool = true;
 
 #[macro_use]
 extern crate log;
+#[allow(unused_imports)]
 use log::{debug, error, info, trace, warn};
+
+extern crate simplelog;
+use simplelog::*;
+use std::fs::File;
+
+
 
 fn main() -> Result<(), Box<dyn Error>> {
     // Init logger
-    env_logger::Builder::from_default_env()
-        .parse_filters("trace")
-        .init();
-    log_enabled!(Level::Trace);
+    // env_logger::Builder::from_default_env()
+    //     .parse_filters("trace")
+    //     .init();
+    //log_enabled!(Level::Debug);
+
+    CombinedLogger::init(
+        vec![
+            TermLogger::new(LevelFilter::Debug, Config::default(), TerminalMode::Mixed),
+            WriteLogger::new(LevelFilter::Trace, Config::default(), File::create("../trace.log").unwrap()),
+        ]
+    ).unwrap();
+
 
     trace!("Poll creating new");
     let mut poll = Poll::new()?;
 
     trace!("Events capacity 128");
-    let mut events = Events::with_capacity(128);
+    let mut events = Events::with_capacity(16192);
 
     trace!("Initierar connection hashmap");
-    let mut connections = HashMap::new();
+    let mut connections: HashMap<Token,RefCell<ConnectionSource>>= HashMap::new();
+    
+    let mut forward_connections:HashMap<Token,RefCell<Token>> = HashMap::new();
 
     trace!("Crating unique Token with first number of 2, 0=HTTPS_SERVER 1=HTTP_SERVER");
     let mut unique_token = Token(2);
@@ -99,24 +114,56 @@ fn main() -> Result<(), Box<dyn Error>> {
         for event in events.iter() {
             match event.token() {
                 HTTP_SERVER => {
-                    do_server_accept("HTTP",&mut http_server,&mut unique_token,&mut connections,&mut poll,&mut config,false);
+                    do_server_accept(
+                        "HTTP",
+                        &mut http_server,
+                        &mut unique_token,
+                        &mut connections,
+                        &mut forward_connections,
+                        &mut poll,
+                        &mut config,
+                        false,
+                    );
                 }
                 HTTPS_SERVER => {
-                    do_server_accept("HTTPS",&mut https_server,&mut unique_token,&mut connections,&mut poll,&mut config,true);
+                    do_server_accept(
+                        "HTTPS",
+                        &mut https_server,
+                        &mut unique_token,
+                        &mut connections,
+                        &mut forward_connections,
+                        &mut poll,
+                        &mut config,
+                        true,
+                    );
                 }
                 token => {
-                    info!("New token action: {:?}",event);
-                    let success: bool = if let Some(my_session) = connections.get_mut(&token) {
-                        trace!("Found session, and calling it: {:?}",my_session);
-                        my_session
-                            .handle_connection_event(poll.registry(), event)
+                    trace!("New token action: {:?}", event);
+                    let server_token = if let Some(server_token) = forward_connections.get(&token).clone() {
+                        trace!("Found forward token, finding server!");
+                        server_token.borrow_mut().clone()
+                    } else {
+                        trace!("Found no forward token, using supplied token!");
+                        token
+                    };
+                 
+
+                    let success: bool = if let Some(my_session) = connections.get_mut(&server_token)
+                    {
+                        trace!("Found session, and calling it");//: {:?}", my_session);
+                        my_session.borrow_mut()
+                            .handle_connection_event(poll.registry(), event, token)
                             .expect("WTF!!!!!!!!!")
                     } else {
                         false
                     };
                     if !success {
-                        trace!("Removing connection with token: {}",&token.0);
-                        connections.remove(&token);
+                        trace!("Removing connection with token: {}", &server_token.0);
+                        if token != server_token {
+                            trace!("Removing forward_connections client token: {}",token.0);
+                            forward_connections.remove(&token);
+                        }
+                        connections.remove(&server_token);
                     }
                 }
             }
@@ -128,12 +175,13 @@ fn do_server_accept(
     https_or_http: &str,
     server: &mut TcpListener,
     unique_token: &mut Token,
-    connections: &mut HashMap<Token, ConnectionSource>,
+    connections: &mut HashMap<Token, RefCell<ConnectionSource>>,
+    forward_connections: &mut HashMap<Token, RefCell<Token>>,
     poll: &mut Poll,
-    config:&mut rustls::ServerConfig,
+    config: &mut rustls::ServerConfig,
     tls: bool,
 ) {
-    debug!("Connection to {} server",https_or_http);
+    debug!("Connection to {} server", https_or_http);
     loop {
         trace!("{} loop tick", https_or_http);
         let (connection, address) = match server.accept() {
@@ -143,10 +191,6 @@ fn do_server_accept(
                 break;
             }
             Err(e) => {
-                error!(
-                    "Tokenloop: {} We got an error we dont know how to handle! {:?}",
-                    https_or_http, e
-                );
                 panic!(
                     "Tokenloop: {} We got an error we dont know how to handle! {}",
                     https_or_http, e
@@ -155,56 +199,48 @@ fn do_server_accept(
         };
 
         //TODO: We need a safe token number, right now it will just grow to 18446744073709551615
-        let token = Token(unique_token.0);
-        unique_token.0 += 1;
+        unique_token.0 += 2;
+        let server_token = Token(unique_token.0 - 2);
+        let forward_token = Token(unique_token.0 - 1);
         info!(
             "{} accepted connection from: {} adding token {}",
-            https_or_http, address, token.0
+            https_or_http, address, server_token.0
         );
-        
-        let mut tls_session: Option<rustls::ServerSession>= None;
-        if tls {
-            tls_session = Some(rustls::ServerSession::new(&Arc::new(config.clone())));
-        }
-        
 
-
-        let m_session: ConnectionSource = ConnectionSource {
-            server_stream: connection,
-            server_token: token,
-            server_request_body: String::new(),
-            client_stream: None,
-            client_token: None,
-            do_tls: tls_session.is_some(),
-            tls_session: tls_session,
-            serve_path: None,
-            closing: false,
-            closed: false,
+        let mut tls_session: Option<rustls::ServerSession> = if tls {
+            Some(rustls::ServerSession::new(&Arc::new(config.clone())))
+        } else {
+            None
         };
+
+
+        let m_session: ConnectionSource = ConnectionSource::new(connection, server_token, forward_token, tls_session);
+
 
         trace!(
             "{} created connection {:?} and inserting to connections HashMap",
             https_or_http,
             m_session
         );
-        connections.insert(token, m_session);
-        let my_session = connections.get_mut(&token);
+        connections.insert(server_token, RefCell::new(m_session));
+        forward_connections.insert(forward_token, RefCell::new(server_token));
+        let my_session = connections.get(&server_token);
         if my_session.is_none() {
             error!("HTTP Unable to get session from connections HashMahp");
         } else {
-            let reg = my_session;
-            if reg.is_none() {
+            if my_session.is_none() {
                 error!("HTTP my session is None");
+                connections.remove(&server_token);
+                connections.remove(&forward_token);
             } else {
-                match reg.unwrap().init_register(
-                    poll.registry(),
-                    token,
-                    Interest::READABLE,
-                ) {
+                match my_session.unwrap().borrow_mut()
+                    .init_register(poll.registry(), server_token, Interest::READABLE)
+                {
                     Ok(a) => a,
                     Err(e) => {
-                        error!("HTTP got error registering to poll, cleaning up! {:?}", e);
-                        connections.remove(&token);
+                        error!("HTTP got error registering to poll! {:?}", e);
+                        // connections.remove(&server_token);
+                        // connections.remove(&forward_token);
                         break;
                     }
                 };
