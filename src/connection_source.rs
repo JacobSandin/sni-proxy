@@ -7,22 +7,13 @@ use mio::{
 use rustls;
 use rustls::{Session, TLSError};
 
-use regex::Regex;
-
-use httparse::{Header, Request, Response};
-
 //TODO: We{@} are going to start using this
 //use httparse::{Header, Request, EMPTY_HEADER};
 use cmp::min;
-use io::Error;
-use net::Shutdown;
 use std::{
     cmp, io,
     io::{Read, Write},
     net,
-    str::from_utf8,
-    thread,
-    time::Duration,
 };
 
 #[derive(Debug)]
@@ -254,6 +245,7 @@ impl ConnectionSource {
         return Some(true);
     }
 
+    #[allow(unused_variables)]
     fn local_writer(&mut self, event: &Event, registry: &Registry) -> Option<bool> {
         if self.send_to_client.is_none() {
             trace!("Write nothing to send, returning adding \r\n.");
@@ -307,12 +299,12 @@ impl ConnectionSource {
             }
         }
 
-        // self.server_stream.flush().ok();
-        // if self.do_tls {
-        //     thread::sleep(Duration::from_millis(10));
-        // }
+
         self.send_to_client = None;
-        //self.closing = true;
+        if !self.do_tls {
+            // Works for HTTP, but for HTTPS it gives ERR_CONNECTION_REFUSED
+            self.closing = true;
+        }
         trace!("Write DONE");
         return Some(true);
     }
@@ -345,18 +337,18 @@ impl ConnectionSource {
             && self.send_to_farward.is_some();
 
         let tls_ok_r = event.is_readable() && !forward && self.do_tls;
-        // && self.do_tls
-        // && self.tls_session.is_some()
-        // && self.tls_session.as_mut().unwrap().wants_read();
+
         let tls_ok_w = event.is_writable()
             && !forward
             && self.do_tls
             && self.tls_session.is_some()
             && self.tls_session.as_mut().unwrap().wants_write();
 
-        let hand_shaking = self.do_tls
-            && self.tls_session.is_some()
-            && self.tls_session.as_mut().unwrap().is_handshaking();
+        //Cant remove this then HTTP stops working, even thoug it aint used.???
+        // Hm now it worked, 5min later.
+        // let hand_shaking = self.do_tls
+        //     && self.tls_session.is_some()
+        //     && self.tls_session.as_mut().unwrap().is_handshaking();
         let cli_ok_r = !forward && event.is_readable();
         let cli_ok_w = !forward && event.is_writable();
 
@@ -373,8 +365,6 @@ impl ConnectionSource {
             token == self.server_token,
             token == self.forward_token
         );
-
-        //        trace!("Registry:\r\n{:?}\r\nToken:\r\n{:?}\r\nEvent:\r\n{:?}",registry,token,event);
 
         if token == self.server_token {
             self.server_reregistered = false;
@@ -400,8 +390,6 @@ impl ConnectionSource {
                 forward = false;
             } else {
                 self.closing = true;
-                //self.close_all(registry);
-                //return Some(false);
             }
         }
 
@@ -420,7 +408,6 @@ impl ConnectionSource {
 
         if self.counter > 20 {
             self.reregister(registry, token, Interest::READABLE).ok();
-        //self.closing = true;
         } else if !tls_ok_r && !tls_ok_w && !cli_ok_r && cli_ok_w && !fwd_ok_r && !fwd_ok_w {
             self.counter += 1;
         } else {
@@ -456,11 +443,8 @@ impl ConnectionSource {
             trace!("Entering FWD_R ({})", success);
             if self.send_to_client.is_none() && self.forward_stream.is_some() {
                 let mut received_data = Vec::new();
-                let mut count = 1;
                 loop {
                     let mut buf = [0; 2048];
-                    count += 1;
-                    //if count>6100{panic!("break")}
                     let res = self.forward_stream.as_mut().unwrap().read(&mut buf);
                     trace!("ForRead Checking read errors");
                     if res.is_err() {
@@ -508,14 +492,6 @@ impl ConnectionSource {
                     String::from_utf8_lossy(&received_data[..cmp::min(received_data.len(), 256)])
                 );
                 self.send_to_client = Some(received_data);
-                // self.forward_stream.as_mut().unwrap().deregister(registry).ok();
-                // self.forward_stream.as_mut().unwrap().flush().unwrap();
-                // self.forward_stream
-                //     .as_mut()
-                //     .unwrap()
-                //     .shutdown(Shutdown::Both)
-                //     .ok();
-                // self.forward_stream = None;
             }
 
             trace!("Exiting FWD_R ({})", success);
@@ -594,145 +570,10 @@ impl ConnectionSource {
             trace!("EXIT tls read.");
         }
 
-        /*
-                if tls_ok_w {
-                    trace!("Entering TLS_W");
-                    trace!("tls_session (write) Geting SNI hostname if set.");
-                    let tls_host = match self.tls_session.as_mut().unwrap().get_sni_hostname() {
-                        Some(s) => String::from(s),
-                        None => {
-                            trace!("tls_session (write) Tls host None");
-                            String::new()
-                        }
-                    };
-                    debug!("tls_session (write) TLS hostname: {}", tls_host);
-
-                    trace!("Unwrapping tls_session (write) for wants_write");
-                    if self.tls_session.as_mut().unwrap().wants_write() {
-                        trace!("tls_session (write) Doing write_tls on server_stream");
-                        let ret = self
-                            .tls_session
-                            .as_mut()
-                            .unwrap()
-                            .write_tls(&mut self.server_stream);
-                        if ret.is_err() {
-                            trace!("tls_session (write) We got an error writing tls");
-                            let e = ret.unwrap_err().kind();
-                            match e {
-                                io::ErrorKind::ConnectionAborted => {
-                                    error!("tls_session (write) Connection aborted");
-                                    //Should close O think
-                                    //self.closing = true;
-                                    //return Some(false);
-                                }
-                                io::ErrorKind::WouldBlock => {
-                                    trace!("tls_session (write) Error WouldBlock");
-                                    //return Some(true);
-                                    //connection_closed=true;
-                                }
-                                _ => {
-                                    error!("tls_session (write) Unknown error {:?}", e);
-                                }
-                            }
-                        } else {
-                            let u = ret.ok().unwrap();
-                            trace!("tls_session (write) Got usize {}", u);
-                            if u == 0 {
-                                // self.closing = true;
-                                // return Some(false);
-                            }
-                        }
-                    }
-                    if self.tls_session.as_mut().unwrap().is_handshaking() {
-                        debug!("tls_session (write) Still handshaking!");
-                    } else {
-                        debug!("tls_session (write) Not handshaking");
-                    }
-                }
-        */
-
-        /*
-                if tls_ok_r {
-                    trace!("Entering TLS_R");
-                    trace!("tls_session (read) Unwrapping tls_session wants_read");
-                    while self.tls_session.as_mut().unwrap().wants_read() {
-                        trace!("tls_session (read) Matching read_tls");
-                        match self
-                            .tls_session
-                            .as_mut()
-                            .unwrap()
-                            .read_tls(&mut self.server_stream)
-                        {
-                            Ok(0) => {
-                                trace!("tls_session (read) unwrap process_new_packages.");
-                                match self.tls_session.as_mut().unwrap().process_new_packets() {
-                                   Err(e) if e == TLSError::AlertReceived(rustls::internal::msgs::enums::AlertDescription::CertificateUnknown) => {
-                                        error!("tls_session (read) 1.Certificate unknown we are ignoring for adresses without certs yet.++++++++++++++++++++++++++++++++++");
-                                        //panic!("wtf");
-                                    },
-                                    Err(e) => {
-                                        error!(
-                                            "tls_session (read) Unknown error:processing TLS packages (ignoring) {:?} ",
-                                            e
-                                        );
-
-                                        self.closing = true;
-                                        break;
-                                    }
-                                    _ => {}
-                                }
-                                //self.closing = true;
-                                break;
-                            }
-                            Ok(n) => {
-                                trace!("tls_session (read) tls bytes {}", n);
-                                match self.tls_session.as_mut().unwrap().process_new_packets() {
-                                    Err(e) if e == TLSError::AlertReceived(rustls::internal::msgs::enums::AlertDescription::CertificateUnknown) => {
-                                        error!("tls_session (read) 2. Certificate unknown we are ignoring for adresses without certs yet. -------------------------------");
-                                        //panic!("wtf");
-                                    },
-                                Err(e) => {
-                                        error!("tls_session (read) Error read processing TLS packages {:?} ", e);
-                                        //TODO: Not needed here it seem
-                                        // self.do_tls_write_and_handle_error();
-                                        self.closing = true;
-                                        break;
-                                    }
-                                    _ => {}
-                                }
-                            }
-                            Err(ref err) if err.kind() == io::ErrorKind::WouldBlock => {
-                                trace!("tls_session (read) Connection WouldBlock breaking.");
-                                break;
-                            }
-                            Err(ref err) if err.kind() == io::ErrorKind::Interrupted => {
-                                trace!("tls_session (read) Connection interupted, continue.");
-                                continue;
-                            }
-                            Err(ref err) if err.kind() == io::ErrorKind::ConnectionAborted => {
-                                error!("tls_session (read) Connection aborted");
-                                //TODO test closing again
-                                self.closing = true;
-                                break;
-                            }
-
-                            Err(e) => {
-                                error!("tls_session (read) Unknown error tls read: {:?}", e);
-                                self.closing = true;
-                                break;
-                            }
-                        }
-                    }
-                    if self.tls_session.as_mut().unwrap().is_handshaking() {
-                        debug!("tls_session (read) still handshaking! +++");
-                    } else {
-                        debug!("tls_session (read) not handshaking! ---");
-                    }
-                }
-        */
+ 
         /*
 
-            Read/Write TLS and HTTPS
+            Read/Write to and from Client
 
         */
         trace!("MAIN closing: ({})", self.closing);
@@ -755,9 +596,6 @@ impl ConnectionSource {
 
         */
 
-        if !success {
-            trace!("Why!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
-        }
 
         if self.closing {
             trace!("Main closing connection");
@@ -786,13 +624,19 @@ impl ConnectionSource {
         if self.done_closing {
             return Some(false);
         }
+        if self.do_tls {
+            self.tls_session.as_mut().unwrap().flush().ok();
+        } else {
+            self.server_stream.flush().ok();
+        }
         return Some(true);
     }
 
     fn close_all(&mut self, registry: &Registry) {
-        trace!("closing connection");
+        trace!("entering close_all closing connections");
         if self.do_tls {
             self.tls_session.as_mut().unwrap().send_close_notify();
+            self.tls_session.as_mut().unwrap().flush().ok();
         }
         let _ = self.server_stream.shutdown(net::Shutdown::Both);
 
@@ -804,5 +648,6 @@ impl ConnectionSource {
                 .shutdown(net::Shutdown::Both);
         }
         self.deregister(registry).expect("Gurka");
+        trace!("exiting close_all closing connections");
     }
 }

@@ -16,7 +16,7 @@ mod sni_resolver;
 use crate::connection_source::ConnectionSource;
 use crate::sni_resolver::{load_certs, load_private_key, load_resolver};
 
-use std::{collections::HashMap, error::Error, io, sync::Arc, cell::{RefCell}};
+use std::{cell::RefCell, collections::HashMap, error::Error, io, sync::Arc};
 
 use mio::{net::TcpListener, Events, Interest, Poll, Token};
 
@@ -35,22 +35,17 @@ extern crate simplelog;
 use simplelog::*;
 use std::fs::File;
 
-
-
 fn main() -> Result<(), Box<dyn Error>> {
-    // Init logger
-    // env_logger::Builder::from_default_env()
-    //     .parse_filters("trace")
-    //     .init();
-    //log_enabled!(Level::Debug);
-
-    CombinedLogger::init(
-        vec![
-            TermLogger::new(LevelFilter::Debug, Config::default(), TerminalMode::Mixed),
-            WriteLogger::new(LevelFilter::Trace, Config::default(), File::create("../trace.log").unwrap()),
-        ]
-    ).unwrap();
-
+    
+    CombinedLogger::init(vec![
+        TermLogger::new(LevelFilter::Debug, Config::default(), TerminalMode::Mixed),
+        WriteLogger::new(
+            LevelFilter::Trace,
+            Config::default(),
+            File::create("../trace.log").unwrap(),
+        ),
+    ])
+    .unwrap();
 
     trace!("Poll creating new");
     let mut poll = Poll::new()?;
@@ -59,9 +54,9 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut events = Events::with_capacity(16192);
 
     trace!("Initierar connection hashmap");
-    let mut connections: HashMap<Token,RefCell<ConnectionSource>>= HashMap::new();
-    
-    let mut forward_connections:HashMap<Token,RefCell<Token>> = HashMap::new();
+    let mut connections: HashMap<Token, RefCell<ConnectionSource>> = HashMap::new();
+
+    let mut forward_connections: HashMap<Token, RefCell<Token>> = HashMap::new();
 
     trace!("Crating unique Token with first number of 2, 0=HTTPS_SERVER 1=HTTP_SERVER");
     let mut unique_token = Token(2);
@@ -139,19 +134,20 @@ fn main() -> Result<(), Box<dyn Error>> {
                 }
                 token => {
                     trace!("New token action: {:?}", event);
-                    let server_token = if let Some(server_token) = forward_connections.get(&token).clone() {
-                        trace!("Found forward token, finding server!");
-                        server_token.borrow_mut().clone()
-                    } else {
-                        trace!("Found no forward token, using supplied token!");
-                        token
-                    };
-                 
+                    let server_token =
+                        if let Some(server_token) = forward_connections.get(&token).clone() {
+                            trace!("Found forward token, finding server!");
+                            server_token.borrow_mut().clone()
+                        } else {
+                            trace!("Found no forward token, using supplied token!");
+                            token
+                        };
 
                     let success: bool = if let Some(my_session) = connections.get_mut(&server_token)
                     {
-                        trace!("Found session, and calling it");//: {:?}", my_session);
-                        my_session.borrow_mut()
+                        trace!("Found session, and calling it"); //: {:?}", my_session);
+                        my_session
+                            .borrow_mut()
                             .handle_connection_event(poll.registry(), event, token)
                             .expect("WTF!!!!!!!!!")
                     } else {
@@ -160,7 +156,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                     if !success {
                         trace!("Removing connection with token: {}", &server_token.0);
                         if token != server_token {
-                            trace!("Removing forward_connections client token: {}",token.0);
+                            trace!("Removing forward_connections client token: {}", token.0);
                             forward_connections.remove(&token);
                         }
                         connections.remove(&server_token);
@@ -207,15 +203,14 @@ fn do_server_accept(
             https_or_http, address, server_token.0
         );
 
-        let mut tls_session: Option<rustls::ServerSession> = if tls {
+        let tls_session: Option<rustls::ServerSession> = if tls {
             Some(rustls::ServerSession::new(&Arc::new(config.clone())))
         } else {
             None
         };
 
-
-        let m_session: ConnectionSource = ConnectionSource::new(connection, server_token, forward_token, tls_session);
-
+        let m_session: ConnectionSource =
+            ConnectionSource::new(connection, server_token, forward_token, tls_session);
 
         trace!(
             "{} created connection {:?} and inserting to connections HashMap",
@@ -225,25 +220,29 @@ fn do_server_accept(
         connections.insert(server_token, RefCell::new(m_session));
         forward_connections.insert(forward_token, RefCell::new(server_token));
         let my_session = connections.get(&server_token);
+        let mut mark_error_for_cleanup = false;
         if my_session.is_none() {
             error!("HTTP Unable to get session from connections HashMahp");
         } else {
             if my_session.is_none() {
                 error!("HTTP my session is None");
-                connections.remove(&server_token);
-                connections.remove(&forward_token);
+                mark_error_for_cleanup = true;
             } else {
-                match my_session.unwrap().borrow_mut()
-                    .init_register(poll.registry(), server_token, Interest::READABLE)
-                {
+                match my_session.unwrap().borrow_mut().init_register(
+                    poll.registry(),
+                    server_token,
+                    Interest::READABLE,
+                ) {
                     Ok(a) => a,
                     Err(e) => {
                         error!("HTTP got error registering to poll! {:?}", e);
-                        // connections.remove(&server_token);
-                        // connections.remove(&forward_token);
-                        break;
+                        mark_error_for_cleanup = true;
                     }
                 };
+            }
+            if mark_error_for_cleanup {
+                forward_connections.remove(&forward_token);
+                connections.remove(&server_token);
             }
 
             trace!("HTTP Finished adding new session to poll, connections and everything");
