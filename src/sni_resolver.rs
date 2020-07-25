@@ -1,7 +1,6 @@
 use rustls::{TLSError, sign, ClientHello, ResolvesServerCert};
 use rustls::sign::{SigningKey, RSASigningKey};
 use rustls::internal::pemfile::{certs, pkcs8_private_keys, rsa_private_keys};
-//use tokio_rustls::webpki;
 use std::io::{BufReader};
 use std::fs::{self, File};
 use std::sync::Arc;
@@ -11,19 +10,15 @@ use regex::Regex;
 
 
 pub fn load_resolver() -> MyResolvesServerCertUsingSNI{
-
-
     let mut resolver = MyResolvesServerCertUsingSNI::new();
     add_certificate_to_resolver("icm.prod.imcode.com", "icm.imcode.com", &mut resolver);
     add_certificate_to_resolver("importal.prod.imcode.com", "importal.nu", &mut resolver);
     //add_certificate_to_resolver("adaicm.prod.imcode.com", "localhost", &mut resolver);
     resolver
-
 }
 
 #[allow(dead_code)]
 pub struct MyResolvesServerCertUsingSNI {
-    //  pub domains: collections::HashMap<string, string>,
     by_name: collections::HashMap<String, sign::CertifiedKey>,
 }
 
@@ -31,33 +26,16 @@ pub struct MyResolvesServerCertUsingSNI {
 impl MyResolvesServerCertUsingSNI {
     pub fn new() -> MyResolvesServerCertUsingSNI {
         MyResolvesServerCertUsingSNI {
-            //   domains: collections::HashMap::new(),
             by_name: collections::HashMap::new(),
         }
     }
     pub fn add(&mut self, name: &str, ck: sign::CertifiedKey) -> Result<(), TLSError> {
 
-        //TODO: Needed?
-        // let checked_name = webpki::DNSNameRef::try_from_ascii_str(name)
-        //     .map_err(|_| TLSError::General("Bad DNS name".into()))?;
-
         if self.by_name.is_empty() {
             self.by_name.insert(String::from("__default__"), ck.clone());
         }
 
-        //TODO: Needed?
-        // let _err = match ck.cross_check_end_entity_cert(Some(checked_name))
-        // {
-        //     Ok(_) => (),
-        //     Err(e) => {
-        //         println!("Error testing cert error ({}): {}",name,e.to_string());
-        //         ()
-        //     },
-        // };
-
-        //println!("Efter");
         self.by_name.insert(name.into(), ck);
-        //println!("Efter2");
         Ok(())
     }
 }
@@ -108,7 +86,6 @@ pub fn add_certificate_to_resolver<'a>(
     }
 
     let cert = &mut BufReader::new(cert_file.unwrap());
-    //let key = &mut BufReader::new(key_file.unwrap());
     let cert_chain = certs(cert).unwrap();
 
 
@@ -123,14 +100,12 @@ pub fn add_certificate_to_resolver<'a>(
         println!("regex {}", &cap[1]);
     }
 
-    
-    
     let mut keys = 
         rsa_private_keys( 
         &mut BufReader::new(
             File::open(format!("../certificates/{}/privkey.pem", name)).unwrap())).unwrap();
 
-    if keys.len() == 0 { // <============
+    if keys.len() == 0 {
         let key = &mut BufReader::new(File::open(format!("../certificates/{}/privkey.pem", name)).unwrap());
         keys = pkcs8_private_keys(key).unwrap();
     };
@@ -157,13 +132,13 @@ pub fn add_certificate_to_resolver<'a>(
 
 // For loading certs in a single cert setup
 
-#[allow(dead_code)]
+//#[allow(dead_code)]
 pub fn load_certs(filename: &str) -> Vec<rustls::Certificate> {
     let certfile = fs::File::open(filename).expect("cannot open certificate file");
     let mut reader = BufReader::new(certfile);
     rustls::internal::pemfile::certs(&mut reader).unwrap()
 }
-#[allow(dead_code)]
+//#[allow(dead_code)]
 pub fn load_private_key(filename: &str) -> rustls::PrivateKey {
     let rsa_keys = {
         let keyfile = fs::File::open(filename)

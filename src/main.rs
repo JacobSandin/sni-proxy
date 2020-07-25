@@ -11,10 +11,8 @@
 
 
     TODO: Test https://github.com/nbaksalyar/rust-streaming-http-parser/
-
 */
 
-//mod cert_handling;
 mod connection_source;
 mod sni_resolver;
 #[macro_use]
@@ -235,7 +233,7 @@ fn do_server_accept(
                 error!(target: "0","HTTP my session is None");
                 mark_error_for_cleanup = true;
             } else {
-                match my_session.unwrap().borrow_mut().init_register(
+                match my_session.unwrap().borrow_mut().call_with_new_client(
                     poll.registry(),
                     server_token,
                     Interest::READABLE,
