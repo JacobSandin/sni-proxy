@@ -8,11 +8,18 @@
 
     https://github.com/ctz/rustls/blob/master/rustls-mio/examples/tlsserver.rs
 
+
+
+    TODO: Test https://github.com/nbaksalyar/rust-streaming-http-parser/
+
 */
 
 //mod cert_handling;
 mod connection_source;
 mod sni_resolver;
+#[macro_use]
+mod macros;
+
 use crate::connection_source::ConnectionSource;
 use crate::sni_resolver::{load_certs, load_private_key, load_resolver};
 
@@ -36,7 +43,7 @@ use simplelog::*;
 use std::fs::File;
 
 fn main() -> Result<(), Box<dyn Error>> {
-    
+
     CombinedLogger::init(vec![
         TermLogger::new(LevelFilter::Debug, Config::default(), TerminalMode::Mixed),
         WriteLogger::new(
@@ -47,63 +54,63 @@ fn main() -> Result<(), Box<dyn Error>> {
     ])
     .unwrap();
 
-    trace!("Poll creating new");
+    trace!(target: "0","Poll creating new");
     let mut poll = Poll::new()?;
 
-    trace!("Events capacity 128");
+    trace!(target: "0","Events capacity 128");
     let mut events = Events::with_capacity(16192);
 
-    trace!("Initierar connection hashmap");
+    trace!(target: "0","Initierar connection hashmap");
     let mut connections: HashMap<Token, RefCell<ConnectionSource>> = HashMap::new();
 
     let mut forward_connections: HashMap<Token, RefCell<Token>> = HashMap::new();
 
-    trace!("Crating unique Token with first number of 2, 0=HTTPS_SERVER 1=HTTP_SERVER");
+    trace!(target: "0","Crating unique Token with first number of 2, 0=HTTPS_SERVER 1=HTTP_SERVER");
     let mut unique_token = Token(2);
 
-    debug!("Starting HTTPS_SERVER");
+    debug!(target: "0","Starting HTTPS_SERVER");
     let mut https_server = TcpListener::bind("127.0.0.1:443".parse()?)?;
 
-    debug!("Starting HTTP_SERVER");
+    debug!(target: "0","Starting HTTP_SERVER");
     let mut http_server = TcpListener::bind("127.0.0.1:80".parse()?)?;
 
-    trace!("Adding HTTPS_SERVER to polling");
+    trace!(target: "0","Adding HTTPS_SERVER to polling");
     poll.registry()
         .register(&mut https_server, HTTPS_SERVER, Interest::READABLE)?;
 
-    trace!("Adding HTTP_SERVER to polling");
+    trace!(target: "0","Adding HTTP_SERVER to polling");
     poll.registry()
         .register(&mut http_server, HTTP_SERVER, Interest::READABLE)?;
 
-    trace!("Creating tls config");
+    trace!(target: "0","Creating tls config");
     let mut config = rustls::ServerConfig::new(NoClientAuth::new());
 
     if SNI_TLS_CERTS {
-        trace!("Loading resolver");
+        trace!(target: "0","Loading resolver");
         let resolver = load_resolver();
 
-        trace!("Adding cert resolver to config");
+        trace!(target: "0","Adding cert resolver to config");
         config.cert_resolver = std::sync::Arc::new(resolver);
     } else {
-        trace!("Load certificate for single cert server");
+        trace!(target: "0","Load certificate for single cert server");
         let certs = load_certs("../certificates/icm.prod.imcode.com/fullchain.pem");
-        trace!("Load cert key for single cert server");
+        trace!(target: "0","Load cert key for single cert server");
         let privkey = load_private_key("../certificates/icm.prod.imcode.com/privkey.pem");
-        trace!("Adding single cert to tls config");
+        trace!(target: "0","Adding single cert to tls config");
         config
             .set_single_cert(certs, privkey)
             .map_err(|e| {
-                error!("Bad certificates/private key {:?}", e);
+                error!(target: "0","Bad certificates/private key {:?}", e);
                 e
             })
             .unwrap();
     }
-    trace!("Adding protocolls to tls config http/(1.1,1.2)");
+    trace!(target: "0","Adding protocolls to tls config http/(1.1,1.2)");
     config.set_protocols(&[b"http/1.2".to_vec(), b"http/1.1".to_vec()]);
 
-    debug!("Starting poll loop");
+    debug!(target: "0","Starting poll loop");
     loop {
-        trace!("Polling with None as timeout");
+        trace!(target: "0","Polling with None as timeout");
         poll.poll(&mut events, None)?;
 
         for event in events.iter() {
@@ -133,19 +140,19 @@ fn main() -> Result<(), Box<dyn Error>> {
                     );
                 }
                 token => {
-                    trace!("New token action: {:?}", event);
+                    trace!(target: "0","New token action: {:?}", event);
                     let server_token =
                         if let Some(server_token) = forward_connections.get(&token).clone() {
-                            trace!("Found forward token, finding server!");
+                            trace!(target: "0","Found forward token, finding server!");
                             server_token.borrow_mut().clone()
                         } else {
-                            trace!("Found no forward token, using supplied token!");
+                            trace!(target: "0","Found no forward token, using supplied token!");
                             token
                         };
 
                     let success: bool = if let Some(my_session) = connections.get_mut(&server_token)
                     {
-                        trace!("Found session, and calling it"); //: {:?}", my_session);
+                        trace!(target: "0","Found session, and calling it"); //: {:?}", my_session);
                         my_session
                             .borrow_mut()
                             .handle_connection_event(poll.registry(), event, token)
@@ -154,9 +161,9 @@ fn main() -> Result<(), Box<dyn Error>> {
                         false
                     };
                     if !success {
-                        trace!("Removing connection with token: {}", &server_token.0);
+                        trace!(target: "0","Removing connection with token: {}", &server_token.0);
                         if token != server_token {
-                            trace!("Removing forward_connections client token: {}", token.0);
+                            trace!(target: "0","Removing forward_connections client token: {}", token.0);
                             forward_connections.remove(&token);
                         }
                         connections.remove(&server_token);
@@ -177,18 +184,18 @@ fn do_server_accept(
     config: &mut rustls::ServerConfig,
     tls: bool,
 ) {
-    debug!("Connection to {} server", https_or_http);
+    debug!(target: "0","Connection to {} server", https_or_http);
     loop {
-        trace!("{} loop tick", https_or_http);
+        trace!(target: "0","{} loop tick", https_or_http);
         let (connection, address) = match server.accept() {
             Ok((connection, address)) => (connection, address),
             Err(e) if e.kind() == io::ErrorKind::WouldBlock => {
-                trace!("Noticing would block for {} server", https_or_http);
+                trace!(target: "0","Noticing would block for {} server", https_or_http);
                 break;
             }
             Err(e) => {
                 panic!(
-                    "Tokenloop: {} We got an error we dont know how to handle! {}",
+                    "Token-loop: {} We got an error we dont know how to handle! {}",
                     https_or_http, e
                 );
             }
@@ -222,10 +229,10 @@ fn do_server_accept(
         let my_session = connections.get(&server_token);
         let mut mark_error_for_cleanup = false;
         if my_session.is_none() {
-            error!("HTTP Unable to get session from connections HashMahp");
+            error!(target: "0","HTTP Unable to get session from connections HashMahp");
         } else {
             if my_session.is_none() {
-                error!("HTTP my session is None");
+                error!(target: "0","HTTP my session is None");
                 mark_error_for_cleanup = true;
             } else {
                 match my_session.unwrap().borrow_mut().init_register(
@@ -235,7 +242,7 @@ fn do_server_accept(
                 ) {
                     Ok(a) => a,
                     Err(e) => {
-                        error!("HTTP got error registering to poll! {:?}", e);
+                        error!(target: "0","HTTP got error registering to poll! {:?}", e);
                         mark_error_for_cleanup = true;
                     }
                 };
@@ -245,7 +252,7 @@ fn do_server_accept(
                 connections.remove(&server_token);
             }
 
-            trace!("HTTP Finished adding new session to poll, connections and everything");
+            trace!(target: "0","HTTP Finished adding new session to poll, connections and everything");
         }
     }
 }

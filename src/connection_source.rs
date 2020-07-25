@@ -7,14 +7,14 @@ use mio::{
 use rustls;
 use rustls::{Session, TLSError};
 
-//TODO: We{@} are going to start using this
-//use httparse::{Header, Request, EMPTY_HEADER};
 use cmp::min;
 use std::{
     cmp, io,
     io::{Read, Write},
     net,
 };
+
+use crate::{read_error_handling, write_error_handling, process_error_handling};
 
 #[derive(Debug)]
 pub struct ConnectionSource {
@@ -45,17 +45,17 @@ impl Source for ConnectionSource {
     ) -> io::Result<()> {
         if !self.done_closing {
             if token == self.forward_token && self.forward_stream.is_some() {
-                trace!("Registering forward");
+                trace!(target: &self.server_token.0.to_string(),"Registering forward");
                 self.forward_stream
                     .as_mut()
                     .unwrap()
                     .register(registry, token, interests)
             } else {
-                trace!("Registering Server");
+                trace!(target: &self.server_token.0.to_string(),"Registering Server");
                 self.server_stream.register(registry, token, interests)
             }
         } else {
-            trace!("Not registering ConnectionSource function (closing)");
+            trace!(target: &self.server_token.0.to_string(),"Not registering ConnectionSource function (closing)");
             Ok(())
         }
     }
@@ -68,14 +68,14 @@ impl Source for ConnectionSource {
     ) -> io::Result<()> {
         if !self.done_closing {
             if token == self.forward_token && self.forward_stream.is_some() {
-                trace!("Reregistering Forward using ConnectionSource function");
+                trace!(target: &self.server_token.0.to_string(),"Reregistering Forward using ConnectionSource function");
                 self.forward_stream
                     .as_mut()
                     .unwrap()
                     .reregister(registry, token, interests)
                     .ok();
             } else {
-                trace!("Reregistering Server using ConnectionSource function");
+                trace!(target: &self.server_token.0.to_string(),"Reregistering Server using ConnectionSource function");
                 self.server_reregistered = true;
                 self.server_stream
                     .reregister(registry, token, interests)
@@ -86,7 +86,7 @@ impl Source for ConnectionSource {
     }
 
     fn deregister(&mut self, registry: &Registry) -> io::Result<()> {
-        trace!("Deregistering using ConnectionSource function");
+        trace!(target: &self.server_token.0.to_string(),"Deregistering using ConnectionSource function");
         if self.forward_stream.is_some() {
             self.forward_stream
                 .as_mut()
@@ -137,59 +137,23 @@ impl ConnectionSource {
         loop {
             let mut buf = [0; 512];
 
-            trace!("Read Reading buffer as tls={}", self.do_tls);
+            trace!(target: &self.server_token.0.to_string(),"Read Reading buffer as tls={}", self.do_tls);
             let res: Result<usize, std::io::Error> = if self.do_tls {
-                trace!("Read using tls_session to read");
+                trace!(target: &self.server_token.0.to_string(),"Read using tls_session to read");
                 self.tls_session.as_mut().unwrap().read(&mut buf)
             } else {
-                trace!("Read using server_stream to read");
+                trace!(target: &self.server_token.0.to_string(),"Read using server_stream to read");
                 self.server_stream.read(&mut buf)
             };
 
-            trace!("Read Checking read errors");
-            if res.is_err() {
-                match res.unwrap_err().kind() {
-                    io::ErrorKind::WouldBlock => {
-                        trace!("Read Would block");
-                        //   connection_closed=true;
-                        break;
-                    }
-                    io::ErrorKind::Interrupted => {
-                        trace!("Read Interupted");
-                        continue;
-                        //break;
-                    }
-                    err => {
-                        trace!("Read Unknown error : {:?}", err);
-                        self.closing = true;
-                        return Some(false);
-                    }
-                }
-            } else {
-                trace!("Read checking OK");
-                match res.unwrap() {
-                    0 => {
-                        //                        self.closing = true;
-                        trace!("Read reading zero closing:({})", self.closing);
-                        break;
-                    }
-                    n => {
-                        trace!("Read Transfering read buffer to datacollecter received_data");
-                        received_data.extend_from_slice(&buf[..n]);
-                    }
-                }
-            }
+            trace!(target: &self.server_token.0.to_string(),"Read Checking read errors");
+            read_error_handling!(self, res, received_data, buf);
         }
 
-        // trace!(
-        //     "Read got data ------------------------------------------:\r\n{}",
-        //     String::from_utf8_lossy(&received_data[..min(received_data.len(), 2048)])
-        // );
         if String::from_utf8_lossy(&received_data).contains("\r\n\r\n") {
             self.send_to_farward = Some(received_data);
-            //self.send_to_client = None;
             if self.forward_stream.is_none() {
-                debug!("Read starting forward stream.....................................................");
+                debug!(target: &self.server_token.0.to_string(),"Read starting forward stream.....................................................");
 
                 self.forward_stream = if self.tls_session.is_some()
                     && self
@@ -206,25 +170,22 @@ impl ConnectionSource {
                         .unwrap()
                         == "icm.imcode.com"
                 {
-                    trace!("Using forwardhost icm tomcat");
+                    trace!(target: &self.server_token.0.to_string(),"Using forwardhost icm tomcat");
                     Some(TcpStream::connect("192.168.96.59:10132".parse().unwrap()).unwrap())
                 } else {
-                    trace!("Using forward host prod");
+                    trace!(target: &self.server_token.0.to_string(),"Using forward host prod");
                     Some(TcpStream::connect("192.168.96.54:80".parse().unwrap()).unwrap())
                 };
 
-                //                                Some(TcpStream::connect("192.168.96.54:80".parse().unwrap()).unwrap());
-                //TODO Error handling
-
                 //Do we need to register here?
-                trace!("Read Registering forward for WRITE");
+                trace!(target: &self.server_token.0.to_string(),"Read Registering forward for WRITE");
                 self.register(registry, self.forward_token, Interest::WRITABLE)
                     .ok();
-                debug!("Read Server Created...===========================================================");
+                debug!(target: &self.server_token.0.to_string(),"Read Server Created...");
             } else {
                 self.reregister(registry, self.forward_token, Interest::WRITABLE)
                     .ok();
-                debug!("Read Server ReCreated==============================================================");
+                debug!(target: &self.server_token.0.to_string(),"Read Server ReCreated...");
             }
             let len = self.send_to_farward.as_mut().unwrap().len();
             trace!(
@@ -232,23 +193,17 @@ impl ConnectionSource {
                 String::from_utf8_lossy(&self.send_to_farward.as_mut().unwrap()[..min(len, 2048)])
             );
 
-        //TODO Insert client?
-        } else {
-            //self.send_to_client = None;
+            //TODO Insert client?
         };
-        // self.reregister(registry, self.server_token, Interest::WRITABLE)
-        //     .ok();
-        // self.reregister(registry, self.server_token,Interest::READABLE | Interest::WRITABLE)
-        // .ok();
 
-        trace!("Read DONE");
+        trace!(target: &self.server_token.0.to_string(),"Read DONE");
         return Some(true);
     }
 
     #[allow(unused_variables)]
     fn local_writer(&mut self, event: &Event, registry: &Registry) -> Option<bool> {
         if self.send_to_client.is_none() {
-            trace!("Write nothing to send, returning adding \r\n.");
+            trace!(target: &self.server_token.0.to_string(),"Write nothing to send, returning adding \r\n.");
             self.register(registry, self.server_token, Interest::READABLE)
                 .ok();
             return Some(true);
@@ -268,44 +223,14 @@ impl ConnectionSource {
         } else {
             self.server_stream.write_all(&response)
         };
-
-        match ret {
-            // Ok(0) => {
-            //     debug!("Write sent 0 bytes");
-            // }
-            // Ok(n) => {
-            //     trace!("Write wrote {} bytes. breaking", { n });
-            // }
-            Ok(_) => {
-                trace!("Write succeeded.");
-            }
-            Err(ref err) if err.kind() == io::ErrorKind::WouldBlock => {
-                trace!("Write Error wouldblock ignoring");
-                //return Some(true);
-            }
-            Err(ref err) if err.kind() == io::ErrorKind::Interrupted => {
-                //TODO: Why
-                trace!("Write registering for mor write as we were interupted.");
-                //We return to try closing when done writing;
-                //return Some(true);
-            }
-            Err(ref err) if err.kind() == io::ErrorKind::ConnectionAborted => {
-                error!("Write Connection aborted (breaking)");
-            }
-            // Other errors we'll consider fatal.
-            Err(err) => {
-                error!("Write Unknown error no writing: {:?}", err);
-                self.closing = true;
-            }
-        }
-
+        write_error_handling!(self, ret);
 
         self.send_to_client = None;
         if !self.do_tls {
             // Works for HTTP, but for HTTPS it gives ERR_CONNECTION_REFUSED
             self.closing = true;
         }
-        trace!("Write DONE");
+        trace!(target: &self.server_token.0.to_string(),"Write DONE");
         return Some(true);
     }
 }
@@ -326,6 +251,7 @@ impl ConnectionSource {
         event: &Event,
         token: Token,
     ) -> Option<bool> {
+        trace!(target: &self.server_token.0.to_string(),"{:?}",event);
         let mut success: bool = true;
 
         let mut forward = token == self.forward_token && self.forward_stream.is_some();
@@ -344,20 +270,20 @@ impl ConnectionSource {
             && self.tls_session.is_some()
             && self.tls_session.as_mut().unwrap().wants_write();
 
-        //Cant remove this then HTTP stops working, even thoug it aint used.???
-        // Hm now it worked, 5min later.
-        // let hand_shaking = self.do_tls
-        //     && self.tls_session.is_some()
-        //     && self.tls_session.as_mut().unwrap().is_handshaking();
         let cli_ok_r = !forward && event.is_readable();
         let cli_ok_w = !forward && event.is_writable();
 
-
-        // Workaround for not finding a way to get tls to work in MIO ekosystem statemachine environment, 
+        // Workaround for not finding a way to get tls to work in MIO ekosystem statemachine environment,
         // and seem to need read write on for the socket all the time.
-        if !forward && event.is_writable() && self.send_to_client.is_none() && !tls_ok_r && !tls_ok_w {
-            self.reregister(registry, token, Interest::READABLE|Interest::WRITABLE).ok();
-             return Some(true);
+        if !forward
+            && event.is_writable()
+            && self.send_to_client.is_none()
+            && !tls_ok_r
+            && !tls_ok_w
+        {
+            self.reregister(registry, token, Interest::READABLE | Interest::WRITABLE)
+                .ok();
+            return Some(true);
         };
 
         debug!(
@@ -374,7 +300,7 @@ impl ConnectionSource {
             panic!("Event is_error");
         }
         if event.is_write_closed() {
-            trace!("Main Event is_write_closed");
+            trace!(target: &self.server_token.0.to_string(),"Main Event is_write_closed");
             if forward {
                 self.closing = true;
                 self.forward_stream = None;
@@ -383,7 +309,7 @@ impl ConnectionSource {
             self.closing = true;
         }
         if event.is_read_closed() {
-            trace!("Main Event is_read_closed");
+            trace!(target: &self.server_token.0.to_string(),"Main Event is_read_closed");
             if forward {
                 self.forward_stream = None;
                 self.closing = true;
@@ -400,12 +326,6 @@ impl ConnectionSource {
             forward
         );
 
-        /*
-
-            Read/Write TLS and HTTPS
-
-        */
-
         if self.counter > 20 {
             self.reregister(registry, token, Interest::READABLE).ok();
         } else if !tls_ok_r && !tls_ok_w && !cli_ok_r && cli_ok_w && !fwd_ok_r && !fwd_ok_w {
@@ -414,74 +334,45 @@ impl ConnectionSource {
             self.counter = 0;
         }
 
-        trace!("\r\ntls_ok_r: {}\r\ntls_ok_w: {}\r\ncli_ok_r: {}\r\ncli_ok_w: {}\r\nfwd_ok_r: {}\r\nfwd_ok_w: {}\r\nCounter: {}\r\n",
+        trace!(target: &self.server_token.0.to_string(),"\r\ntls_ok_r: {}\r\ntls_ok_w: {}\r\ncli_ok_r: {}\r\ncli_ok_w: {}\r\nfwd_ok_r: {}\r\nfwd_ok_w: {}\r\nCounter: {}\r\n",
         tls_ok_r,tls_ok_w,cli_ok_r,cli_ok_w,fwd_ok_r,fwd_ok_w,self.counter);
 
-        trace!("MAIN closing: ({})", self.closing);
+        /*
+
+            Read/Write FWD (HTTP)
+
+        */
+        trace!(target: &self.server_token.0.to_string(),"MAIN closing: ({})", self.closing);
         if fwd_ok_w {
-            trace!("Entering FWD_W ({})", success);
+            trace!(target: &self.server_token.0.to_string(),"Entering FWD_W ({})", success);
 
             let len = min(self.send_to_farward.as_mut().unwrap().len(), 2048);
             debug!(
                 "ForWrite Forwarding!!!!!!!!!!!!!!!!: \r\n{}",
                 String::from_utf8_lossy(&self.send_to_farward.as_mut().unwrap()[..len])
             );
-            trace!("ForWrite Reregistering for READ");
+            trace!(target: &self.server_token.0.to_string(),"ForWrite Reregistering for READ");
             self.reregister(registry, self.forward_token, Interest::READABLE)
                 .ok();
             let stream = self.forward_stream.as_mut().expect("Forward stream");
-            stream
-                .write_all(self.send_to_farward.as_mut().unwrap())
-                .expect("Nothing");
+            let ret = stream.write(self.send_to_farward.as_mut().unwrap());
+            write_error_handling!(self, ret);
             stream.flush().ok();
             self.send_to_farward = None;
-            trace!("Exiting FWD_W ({})", success);
+            trace!(target: &self.server_token.0.to_string(),"Exiting FWD_W ({})", success);
         }
 
-        trace!("MAIN closing: ({})", self.closing);
+        trace!(target: &self.server_token.0.to_string(),"MAIN closing: ({})", self.closing);
         if fwd_ok_r {
-            trace!("Entering FWD_R ({})", success);
+            trace!(target: &self.server_token.0.to_string(),"Entering FWD_R ({})", success);
             if self.send_to_client.is_none() && self.forward_stream.is_some() {
                 let mut received_data = Vec::new();
                 loop {
                     let mut buf = [0; 2048];
                     let res = self.forward_stream.as_mut().unwrap().read(&mut buf);
-                    trace!("ForRead Checking read errors");
-                    if res.is_err() {
-                        match res.unwrap_err().kind() {
-                            io::ErrorKind::WouldBlock => {
-                                trace!("ForRead WouldBlock");
-                                //   connection_closed=true;
-                                break;
-                            }
-                            io::ErrorKind::Interrupted => {
-                                trace!("ForRead Interupted");
-                                continue;
-                                //break;
-                            }
-                            err => {
-                                trace!("ForRead Unknown error : {:?}", err);
-                                self.closing = true;
-                                //return Some(false);
-                            }
-                        }
-                    } else {
-                        trace!("ForRead checking OK");
-                        match res.unwrap() {
-                            0 => {
-                                trace!("ForRead reading zero closing:({})", self.closing);
-                                break;
-                            }
-                            n => {
-                                trace!(
-                                    "ForRead Transfering read buffer to datacollecter received_data {}",
-                                    n
-                                );
-                                received_data.extend_from_slice(&buf[..n]);
-                                // self.forward_stream.as_mut().unwrap().flush().ok();
-                            }
-                        }
-                    }
+                    trace!(target: &self.server_token.0.to_string(),"ForRead Checking read errors");
+
+                    read_error_handling!(self, res, received_data, buf);
                 }
 
                 self.reregister(registry, self.server_token, Interest::WRITABLE)
@@ -494,100 +385,68 @@ impl ConnectionSource {
                 self.send_to_client = Some(received_data);
             }
 
-            trace!("Exiting FWD_R ({})", success);
+            trace!(target: &self.server_token.0.to_string(),"Exiting FWD_R ({})", success);
         }
-        trace!("MAIN closing: ({})", self.closing);
+        trace!(target: &self.server_token.0.to_string(),"MAIN closing: ({})", self.closing);
 
         if fwd_ok_r || fwd_ok_w {
-            self.reregister(registry, token, Interest::READABLE | Interest::WRITABLE).ok();
+            self.reregister(registry, token, Interest::READABLE | Interest::WRITABLE)
+                .ok();
             return Some(true);
         }
 
-        trace!("MAIN closing: ({})", self.closing);
+        /*
+
+            Read/Write TLS and HTTPS
+
+        */
+        trace!(target: &self.server_token.0.to_string(),"MAIN closing: ({})", self.closing);
         if tls_ok_w {
-            trace!("Writing tls...");
+            trace!(target: &self.server_token.0.to_string(),"Writing tls...");
             let rc = self
                 .tls_session
                 .as_mut()
                 .unwrap()
                 .write_tls(&mut self.server_stream);
-            if rc.is_err() {
-                error!("write failed {:?}", rc);
-                self.closing = true;
-            //return;
-            } else {
-                trace!("Write tls: ok");
-            }
-            trace!("EXIT tls write.");
+            write_error_handling!(self, rc);
+            trace!(target: &self.server_token.0.to_string(),"EXIT tls write.");
         }
 
-        trace!("MAIN closing: ({})", self.closing);
+        trace!(target: &self.server_token.0.to_string(),"MAIN closing: ({})", self.closing);
         if tls_ok_r {
-            trace!("New tls read: reading tls");
+            trace!(target: &self.server_token.0.to_string(),"New tls read: reading tls");
             // Read some TLS data.
-            let rc = self
+            let res = self
                 .tls_session
                 .as_mut()
                 .unwrap()
                 .read_tls(&mut self.server_stream);
-            if rc.is_err() {
-                let err = rc.unwrap_err();
-
-                if let io::ErrorKind::WouldBlock = err.kind() {
-                    trace!("New tls read: reading tls");
-                    //return;
-                } 
-
-                error!("New tls read: error {:?}", err);
-                //self.closing = true;
-            //return;
-            } else if rc.unwrap() == 0 {
-                trace!("New tls read: EOF");
-                self.closing = true;
-            }
+            read_error_handling!(self, res);
 
             // Process newly-received TLS messages.
-            trace!("New tls read: processing packages");
+            trace!(target: &self.server_token.0.to_string(),"New tls read: processing packages");
             let processed = self.tls_session.as_mut().unwrap().process_new_packets();
-            if processed.is_err() {
-                error!("New tls read: cannot process packet: {:?}", processed);
-                match processed.unwrap_err() {
-                    TLSError::AlertReceived(rustls::internal::msgs::enums::AlertDescription::CertificateUnknown) => {
-                        error!("tls_session (read) Certificate unknown we are ignoring for adresses without certs yet.");        
-                    },
-                    TLSError::AlertReceived(rustls::internal::msgs::enums::AlertDescription::CertificateExpired) => {
-                        error!("tls_session (read) Certificate expired we are ignoring right now.");        
-                    },
-                    e => {
-                        error!("tls_session (read) Certificate error not known terminating. {:?}",e);        
-                        self.closing = true;
-                    }
-                }
-                // last gasp write to send any alerts
-            } else {
-                trace!("tls_session (read) was OK");
-            }
-            trace!("EXIT tls read.");
+            error!(target: &self.server_token.0.to_string(),"New tls read: cannot process packet: {:?}", processed);
+            process_error_handling!(self,processed);
         }
 
- 
         /*
 
-            Read/Write to and from Client
+            Read/Write CLI
 
         */
-        trace!("MAIN closing: ({})", self.closing);
+        trace!(target: &self.server_token.0.to_string(),"MAIN closing: ({})", self.closing);
         if cli_ok_r {
-            trace!("Entering CLI_R ({})", success);
+            trace!(target: &self.server_token.0.to_string(),"Entering CLI_R ({})", success);
             success = self.local_reader(registry).unwrap();
-            trace!("Exiting CLI_R ({})", success);
+            trace!(target: &self.server_token.0.to_string(),"Exiting CLI_R ({})", success);
         }
 
-        trace!("MAIN closing: ({})", self.closing);
+        trace!(target: &self.server_token.0.to_string(),"MAIN closing: ({})", self.closing);
         if cli_ok_w {
-            trace!("Entering CLI_W ({})", success);
+            trace!(target: &self.server_token.0.to_string(),"Entering CLI_W ({})", success);
             success = self.local_writer(event, registry).unwrap();
-            trace!("Exiting CLI_W ({})", success);
+            trace!(target: &self.server_token.0.to_string(),"Exiting CLI_W ({})", success);
         }
 
         /*
@@ -596,21 +455,24 @@ impl ConnectionSource {
 
         */
 
-
         if self.closing {
-            trace!("Main closing connection");
+            trace!(target: &self.server_token.0.to_string(),"Main closing connection");
             self.close_all(registry);
             return Some(false);
         } else {
-            debug!("Main registry");
+            debug!(target: &self.server_token.0.to_string(),"Main registry");
 
             if token == self.server_token && self.send_to_client.is_none() && !tls_ok_r && !tls_ok_w
             {
-                trace!("Registering READ(/WRITE) but should only need READ.");
-                self.reregister(registry, self.server_token, Interest::WRITABLE | Interest::READABLE)
-                    .ok();
+                trace!(target: &self.server_token.0.to_string(),"Registering READ(/WRITE) but should only need READ.");
+                self.reregister(
+                    registry,
+                    self.server_token,
+                    Interest::WRITABLE | Interest::READABLE,
+                )
+                .ok();
             } else if token == self.server_token && !self.server_reregistered {
-                trace!("Not registered Registering READ.");
+                trace!(target: &self.server_token.0.to_string(),"Not registered Registering READ.");
                 self.reregister(
                     registry,
                     self.server_token,
@@ -620,7 +482,7 @@ impl ConnectionSource {
             };
         }
 
-        debug!("Main DONE");
+        debug!(target: &self.server_token.0.to_string(),"Main DONE");
         if self.done_closing {
             return Some(false);
         }
@@ -633,7 +495,7 @@ impl ConnectionSource {
     }
 
     fn close_all(&mut self, registry: &Registry) {
-        trace!("entering close_all closing connections");
+        trace!(target: &self.server_token.0.to_string(),"entering close_all closing connections");
         if self.do_tls {
             self.tls_session.as_mut().unwrap().send_close_notify();
             self.tls_session.as_mut().unwrap().flush().ok();
@@ -648,6 +510,6 @@ impl ConnectionSource {
                 .shutdown(net::Shutdown::Both);
         }
         self.deregister(registry).expect("Gurka");
-        trace!("exiting close_all closing connections");
+        trace!(target: &self.server_token.0.to_string(),"exiting close_all closing connections");
     }
 }
