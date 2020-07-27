@@ -1,0 +1,7 @@
+#Rename to improxy.env in same or parent dir of where app run
+
+MARIA_URI=mysql://user:password@127.0.0.1:3306/certlookup
+
+SELECT_CRT_TABLE="SELECT id, fullchain, privkey, forward, active from certificate"
+
+SELECT_DN_FROM_CERT_ID="SELECT id, cert_id, dn, ca_primary from cert_domainname WHERE cert_id='{cert_id}';"

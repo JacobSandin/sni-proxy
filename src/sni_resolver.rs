@@ -8,12 +8,12 @@ use std::collections;
 use regex::Regex;
 
 
-
+#[allow(dead_code)] //We leve it for others
 pub fn load_resolver() -> MyResolvesServerCertUsingSNI{
     let mut resolver = MyResolvesServerCertUsingSNI::new();
-    add_certificate_to_resolver("icm.prod.imcode.com", "icm.imcode.com", &mut resolver);
-    add_certificate_to_resolver("importal.prod.imcode.com", "importal.nu", &mut resolver);
-    //add_certificate_to_resolver("adaicm.prod.imcode.com", "localhost", &mut resolver);
+    add_certificate_to_resolver("partof-path.domain.name.com", "domain.name.com", &mut resolver);
+    add_certificate_to_resolver("partof-path.other.domain.name.com", "other-domain.name.com", &mut resolver);
+    //add_certificate_to_resolver("_default_", "localhost", &mut resolver);
     resolver
 }
 
@@ -43,23 +43,23 @@ impl MyResolvesServerCertUsingSNI {
 impl ResolvesServerCert for MyResolvesServerCertUsingSNI {
     fn resolve(&self, client_hello: ClientHello) -> Option<sign::CertifiedKey> {
         if client_hello.server_name().is_none() {
-            println!("cannot look up certificate: no SNI from session");
+            trace!("cannot look up certificate: no SNI from session");
             return None;
         }
         let name: &str = client_hello.server_name().unwrap().into();
-        println!("trying to resolve name: {:?} for signature scheme: {:?}", name, client_hello.sigschemes());
+        debug!("trying to resolve name: {:?} for signature scheme: {:?}", name, client_hello.sigschemes());
 
         if let Some(dnsname) = client_hello.server_name() {
             if self.by_name.contains_key(dnsname.into()) {
-                println!("1. lookup successfull for server name '{:?}'", dnsname);
+                trace!("1. lookup successfull for server name '{:?}'", dnsname);
                 self.by_name.get(dnsname.into()).cloned()
             } else {
-                println!("2. could not look up a certificate for server name '{:?}' trying __default__!", dnsname);
+                trace!("2. could not look up a certificate for server name '{:?}' trying __default__!", dnsname);
                 self.by_name.get("__default__").cloned()
             }
 
         } else {
-            println!("3. could not look up a certificate for server name '{:?}' trying __default__!", client_hello.server_name());
+            trace!("3. could not look up a certificate for server name '{:?}' trying __default__!", client_hello.server_name());
             self.by_name.get("__default__").cloned()
             // None
         }

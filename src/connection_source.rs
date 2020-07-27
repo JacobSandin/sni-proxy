@@ -9,12 +9,15 @@ use rustls::{Session, TLSError};
 
 use cmp::min;
 use std::{
-    cmp, io,
+    cmp,
+    collections::HashMap,
+    io,
     io::{Read, Write},
     net,
+    sync::Arc,
 };
 
-use crate::{process_error_handling, read_error_handling, write_error_handling, ok_macro};
+use crate::{ok_macro, process_error_handling, read_error_handling, write_error_handling};
 
 #[derive(Debug)]
 pub struct ConnectionSource {
@@ -23,6 +26,7 @@ pub struct ConnectionSource {
     pub server_token: Token,
     pub forward_token: Token,
     pub forward_host: String,
+    pub forward_lookup: Arc<HashMap<String, String>>,
     //TODO: Remove do_tls and use tls_session.is_some instead.
     pub do_tls: bool,
 
@@ -82,7 +86,7 @@ impl Source for ConnectionSource {
                     .reregister(registry, token, interests)
                     .ok();
             } else {
-                trace!(target: &self.server_token.0.to_string(),"Reregistering Server using ConnectionSource function");
+                //To much trace!(target: &self.server_token.0.to_string(),"Reregistering Server using ConnectionSource function");
                 self.server_reregistered = true;
                 self.server_stream
                     .reregister(registry, token, interests)
@@ -115,12 +119,14 @@ impl ConnectionSource {
         server_token: Token,
         forward_token: Token,
         tls_session: Option<rustls::ServerSession>,
+        forward_lookup: Arc<HashMap<String, String>>,
     ) -> ConnectionSource {
         let m_session: ConnectionSource = ConnectionSource {
             server_stream: connection,
             server_token: server_token,
             forward_stream: None,
             forward_token: forward_token,
+            forward_lookup: forward_lookup,
             send_to_farward: None,
             send_to_client: None,
             do_tls: tls_session.is_some(),
@@ -192,7 +198,7 @@ impl ConnectionSource {
         //Counter is mostly for debuging.
         self.counter = 0;
         //Flush stream, to clear buffers.
-        ok_macro!(self,self.server_stream.flush());
+        ok_macro!(self, self.server_stream.flush());
         //Transfer send data to local buffer, so that we can set tthe send_to_client to None for new data if there is queue.
         let mut response: Vec<u8> = self.send_to_client.as_mut().unwrap().to_vec();
         self.send_to_client = None;
@@ -232,6 +238,30 @@ impl ConnectionSource {
             //Ok so the forward_stream did not exist.
             //We will check wich IP we need for the forward_stream to connect too.
             //TODO, we need a hash or db interface too look this up.
+            // self.forward_stream = if self.tls_session.is_some()
+            //     && self
+            //         .tls_session
+            //         .as_mut()
+            //         .unwrap()
+            //         .get_sni_hostname()
+            //         .is_some()
+            //     && self
+            //         .tls_session
+            //         .as_mut()
+            //         .unwrap()
+            //         .get_sni_hostname()
+            //         .unwrap()
+            //         == "icm.imcode.com"
+            // {
+            //     //If icm.imcode.com, then redirect to its IP and port.
+            //     trace!(target: &self.server_token.0.to_string(),"Using forwardhost icm tomcat");
+            //     Some(TcpStream::connect("192.168.96.59:10132".parse().unwrap()).unwrap())
+            // } else {
+            //     //Anything else are assigned the following port and IP
+            //     trace!(target: &self.server_token.0.to_string(),"Using forward host prod");
+            //     Some(TcpStream::connect("192.168.96.54:80".parse().unwrap()).unwrap())
+            // };
+
             self.forward_stream = if self.tls_session.is_some()
                 && self
                     .tls_session
@@ -239,20 +269,24 @@ impl ConnectionSource {
                     .unwrap()
                     .get_sni_hostname()
                     .is_some()
-                && self
+            {
+                let sni_hostname = self
                     .tls_session
-                    .as_mut()
+                    .as_ref()
                     .unwrap()
                     .get_sni_hostname()
+                    .unwrap();
+                let adress = self
+                    .forward_lookup
+                    .get(sni_hostname)
                     .unwrap()
-                    == "icm.imcode.com"
-            {
-                //If icm.imcode.com, then redirect to its IP and port.
-                trace!(target: &self.server_token.0.to_string(),"Using forwardhost icm tomcat");
-                Some(TcpStream::connect("192.168.96.59:10132".parse().unwrap()).unwrap())
+                    .parse()
+                    .unwrap();
+                debug!(target: &self.server_token.0.to_string(),"Forwarding {} => {}", sni_hostname, adress);
+                Some(TcpStream::connect(adress).unwrap())
             } else {
                 //Anything else are assigned the following port and IP
-                trace!(target: &self.server_token.0.to_string(),"Using forward host prod");
+                error!(target: &self.server_token.0.to_string(),"Could not find forward adress!");
                 Some(TcpStream::connect("192.168.96.54:80".parse().unwrap()).unwrap())
             };
 
@@ -298,7 +332,7 @@ impl ConnectionSource {
         event: &Event,
         token: Token,
     ) -> Option<bool> {
-        trace!(target: &self.server_token.0.to_string(),"Main incomming Event: \r\n{:?}",event);
+        // Too much trace!(target: &self.server_token.0.to_string(),"Main incomming Event: \r\n{:?}",event);
 
         //Success is used to check if thefunctions called have succeeded or not, we might
         // in the future decide closing depending on this, we will have too see.
@@ -361,14 +395,17 @@ impl ConnectionSource {
         //if it is needed.
 
         if forward && event.is_error() {
-            ok_macro!(self,self.forward_stream
-                .as_mut()
-                .unwrap()
-                .shutdown(net::Shutdown::Both));
-           ok_macro!(self, self.forward_stream
-                .as_mut()
-                .unwrap()
-                .deregister(registry));
+            ok_macro!(
+                self,
+                self.forward_stream
+                    .as_mut()
+                    .unwrap()
+                    .shutdown(net::Shutdown::Both)
+            );
+            ok_macro!(
+                self,
+                self.forward_stream.as_mut().unwrap().deregister(registry)
+            );
             self.forward_stream = None;
             return Some(true);
         } else if !forward && event.is_error() {
@@ -380,14 +417,17 @@ impl ConnectionSource {
         //If there is a close event on the socket we need to free forward so it is recreated,
         //And if server_stream we need to close everything.
         if forward && event.is_write_closed() {
-            ok_macro!(self,self.forward_stream
-                .as_mut()
-                .unwrap()
-                .shutdown(net::Shutdown::Both));
-            ok_macro!(self,self.forward_stream
-                .as_mut()
-                .unwrap()
-                .deregister(registry));
+            ok_macro!(
+                self,
+                self.forward_stream
+                    .as_mut()
+                    .unwrap()
+                    .shutdown(net::Shutdown::Both)
+            );
+            ok_macro!(
+                self,
+                self.forward_stream.as_mut().unwrap().deregister(registry)
+            );
             self.forward_stream = None;
             return Some(true);
         } else if event.is_write_closed() {
@@ -403,14 +443,17 @@ impl ConnectionSource {
         //If there is a close event on the socket we need to free forward so it is recreated,
         //And if server_stream we need to close everything.
         if forward && event.is_read_closed() {
-            ok_macro!(self,self.forward_stream
-                .as_mut()
-                .unwrap()
-                .shutdown(net::Shutdown::Both));
-            ok_macro!(self,self.forward_stream
-                .as_mut()
-                .unwrap()
-                .deregister(registry));
+            ok_macro!(
+                self,
+                self.forward_stream
+                    .as_mut()
+                    .unwrap()
+                    .shutdown(net::Shutdown::Both)
+            );
+            ok_macro!(
+                self,
+                self.forward_stream.as_mut().unwrap().deregister(registry)
+            );
             self.forward_stream = None;
             return Some(true);
         } else if event.is_read_closed() {
@@ -435,7 +478,7 @@ impl ConnectionSource {
         //even though we are in an infinite loop we should not process stuff when it is
         //not needed.
         if self.counter > 20 {
-            ok_macro!(self,self.reregister(registry, token, Interest::READABLE));
+            ok_macro!(self, self.reregister(registry, token, Interest::READABLE));
         } else if !tls_ok_r && !tls_ok_w && !cli_ok_r && cli_ok_w && !fwd_ok_r && !fwd_ok_w {
             self.counter += 1;
         } else {
@@ -482,12 +525,15 @@ impl ConnectionSource {
             write_error_handling!(self, ret);
 
             //Flush and reset
-            ok_macro!(self,stream.flush());
+            ok_macro!(self, stream.flush());
             self.send_to_farward = None;
 
             //Reregister for reading so we can collect the backend answer.
             trace!(target: &self.server_token.0.to_string(),"ForWrite Reregistering for READ");
-            ok_macro!(self,self.reregister(registry, self.forward_token, Interest::READABLE));
+            ok_macro!(
+                self,
+                self.reregister(registry, self.forward_token, Interest::READABLE)
+            );
 
             trace!(target: &self.server_token.0.to_string(),"Exiting FWD_W ({})", success);
         }
@@ -528,7 +574,10 @@ impl ConnectionSource {
         // IF we are in forward, we can stop processing here and reregister for both READ/WRITE
         // Maby we should just close it down, but lets try without the open/close overhead.
         if fwd_ok_r || fwd_ok_w {
-            ok_macro!(self,self.reregister(registry, token, Interest::READABLE | Interest::WRITABLE));
+            ok_macro!(
+                self,
+                self.reregister(registry, token, Interest::READABLE | Interest::WRITABLE)
+            );
             return Some(true);
         }
 
@@ -619,11 +668,14 @@ impl ConnectionSource {
         //TODO: We probably need errorhandling here.
         if token == self.server_token && !self.server_reregistered {
             trace!(target: &self.server_token.0.to_string(),"Not registered Registering READ.");
-            ok_macro!(self,self.reregister(
-                registry,
-                self.server_token,
-                Interest::READABLE | Interest::WRITABLE,
-            ));
+            ok_macro!(
+                self,
+                self.reregister(
+                    registry,
+                    self.server_token,
+                    Interest::READABLE | Interest::WRITABLE,
+                )
+            );
         };
 
         // Flush any active streams or tls_session

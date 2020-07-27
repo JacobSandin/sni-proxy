@@ -8,18 +8,19 @@
 
     https://github.com/ctz/rustls/blob/master/rustls-mio/examples/tlsserver.rs
 
-
-
     TODO: Test https://github.com/nbaksalyar/rust-streaming-http-parser/
 */
 
+//#[macro_use]
+// extern crate mysql;
 mod connection_source;
 mod sni_resolver;
 #[macro_use]
 mod macros;
+mod cert_database;
 
 use crate::connection_source::ConnectionSource;
-use crate::sni_resolver::{load_certs, load_private_key, load_resolver};
+use crate::sni_resolver::{load_certs, load_private_key};
 
 use std::{cell::RefCell, collections::HashMap, error::Error, io, sync::Arc};
 
@@ -37,10 +38,15 @@ extern crate log;
 use log::{debug, error, info, trace, warn};
 
 extern crate simplelog;
+use cert_database::{MariaSNIResolver, get_all_certificates};
 use simplelog::*;
 use std::fs::File;
 
+use dotenv;
+
+
 fn main() -> Result<(), Box<dyn Error>> {
+    dotenv::from_filename("improxy.env").ok();
 
     CombinedLogger::init(vec![
         TermLogger::new(LevelFilter::Debug, Config::default(), TerminalMode::Mixed),
@@ -60,8 +66,31 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     trace!(target: "0","Initierar connection hashmap");
     let mut connections: HashMap<Token, RefCell<ConnectionSource>> = HashMap::new();
-
     let mut forward_connections: HashMap<Token, RefCell<Token>> = HashMap::new();
+
+    // Import certificates and create a forwards hashmap.
+    trace!(target: "0","Load forwards from database");
+    let import_certificates = get_all_certificates();
+    let mut forwards: HashMap<String, String> = HashMap::new();
+    for cert in import_certificates.iter().filter(|c| !c.forward.contains("127")) {
+        if cert.domain_names.is_some() {
+            for dn in cert.domain_names.as_ref().unwrap() {
+                
+                if None == forwards.insert(String::from(&dn.dn), String::from(&cert.forward)) {
+                   //Hosts println!("127.0.0.1   {0}  # {0}  => {1}",dn.dn,cert.forward);
+                }
+            }
+        }
+    }
+    //Debug if anyone is listening. 
+    //TODO we might actually shoul only do this if any debug is on
+    for (f,w) in forwards.iter() {
+//        println!("127.0.0.1   {0}  # {0}  => {1}",f,w);
+        debug!(target: "0","forward mapped {}  => {}",f,w);
+    }
+
+    //Create an arc of the forwards
+    let forwards:Arc<HashMap<String,String>> = Arc::from(forwards); 
 
     trace!(target: "0","Crating unique Token with first number of 2, 0=HTTPS_SERVER 1=HTTP_SERVER");
     let mut unique_token = Token(2);
@@ -84,8 +113,12 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut config = rustls::ServerConfig::new(NoClientAuth::new());
 
     if SNI_TLS_CERTS {
-        trace!(target: "0","Loading resolver");
-        let resolver = load_resolver();
+        trace!(target: "0","Loading mariadb resolver");
+        let mut resolver=MariaSNIResolver::new();
+        resolver.populate(&import_certificates);        
+        
+        //trace!(target: "0","Loading resolver");
+        //let resolver = load_resolver();
 
         trace!(target: "0","Adding cert resolver to config");
         config.cert_resolver = std::sync::Arc::new(resolver);
@@ -103,12 +136,12 @@ fn main() -> Result<(), Box<dyn Error>> {
             })
             .unwrap();
     }
-    trace!(target: "0","Adding protocolls to tls config http/(1.1,1.2)");
+    trace!(target: "0","Adding protocolls to tls config http/https(1.1,1.2)");
     config.set_protocols(&[b"http/1.2".to_vec(), b"http/1.1".to_vec()]);
 
     debug!(target: "0","Starting poll loop");
     loop {
-        trace!(target: "0","Polling with None as timeout");
+
         poll.poll(&mut events, None)?;
 
         for event in events.iter() {
@@ -120,6 +153,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                         &mut unique_token,
                         &mut connections,
                         &mut forward_connections,
+                        &forwards,
                         &mut poll,
                         &mut config,
                         false,
@@ -132,25 +166,26 @@ fn main() -> Result<(), Box<dyn Error>> {
                         &mut unique_token,
                         &mut connections,
                         &mut forward_connections,
+                        &forwards,
                         &mut poll,
                         &mut config,
                         true,
                     );
                 }
                 token => {
-                    trace!(target: "0","New token action: {:?}", event);
+                   //Too much logging  trace!(target: "0","New token action: {:?}", event);
                     let server_token =
                         if let Some(server_token) = forward_connections.get(&token).clone() {
-                            trace!(target: "0","Found forward token, finding server!");
+//Too much logging                            trace!(target: "0","Found forward token, finding server!");
                             server_token.borrow_mut().clone()
                         } else {
-                            trace!(target: "0","Found no forward token, using supplied token!");
+//Too much logging                            trace!(target: "0","Found no forward token, using supplied token!");
                             token
                         };
 
                     let success: bool = if let Some(my_session) = connections.get_mut(&server_token)
                     {
-                        trace!(target: "0","Found session, and calling it"); //: {:?}", my_session);
+//Too much logging                        trace!(target: "0","Found session, and calling it"); //: {:?}", my_session);
                         my_session
                             .borrow_mut()
                             .handle_connection_event(poll.registry(), event, token)
@@ -178,6 +213,7 @@ fn do_server_accept(
     unique_token: &mut Token,
     connections: &mut HashMap<Token, RefCell<ConnectionSource>>,
     forward_connections: &mut HashMap<Token, RefCell<Token>>,
+    forwards: &Arc<HashMap<String,String>>,
     poll: &mut Poll,
     config: &mut rustls::ServerConfig,
     tls: bool,
@@ -215,7 +251,7 @@ fn do_server_accept(
         };
 
         let m_session: ConnectionSource =
-            ConnectionSource::new(connection, server_token, forward_token, tls_session);
+            ConnectionSource::new(connection, server_token, forward_token, tls_session,Arc::clone(forwards));
 
         trace!(
             "{} created connection {:?} and inserting to connections HashMap",
