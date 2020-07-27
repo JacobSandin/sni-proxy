@@ -10,7 +10,7 @@ use rustls::{Session, TLSError};
 use cmp::min;
 use std::{
     cmp,
-    collections::HashMap,
+    collections::{VecDeque, HashMap},
     io,
     io::{Read, Write},
     net,
@@ -31,8 +31,8 @@ pub struct ConnectionSource {
     pub do_tls: bool,
 
     forward_stream: Option<TcpStream>,
-    send_to_farward: Option<Vec<u8>>,
-    send_to_client: Option<Vec<u8>>,
+    send_to_farward: VecDeque<Vec<u8>>,
+    send_to_client: VecDeque<Vec<u8>>,
     closing: bool,
     done_closing: bool,
     server_reregistered: bool,
@@ -127,8 +127,8 @@ impl ConnectionSource {
             forward_stream: None,
             forward_token: forward_token,
             forward_lookup: forward_lookup,
-            send_to_farward: None,
-            send_to_client: None,
+            send_to_farward: VecDeque::new(),
+            send_to_client: VecDeque::new(),
             do_tls: tls_session.is_some(),
             tls_session: tls_session,
             closing: false,
@@ -178,7 +178,8 @@ impl ConnectionSource {
         //TODO: Better parsing to decide, if it is a real request and also to add
         //proxy headers.
         if String::from_utf8_lossy(&received_data).contains("\r\n\r\n") {
-            self.send_to_farward = Some(received_data);
+            self.send_to_farward.push_back(received_data);
+            //= Some(received_data);
             self.activate_forward_stream(registry);
         };
 
@@ -191,7 +192,7 @@ impl ConnectionSource {
     #[allow(unused_variables)]
     fn local_writer(&mut self, event: &Event, registry: &Registry) -> Option<bool> {
         //If we dont have anything to send, we cant realy do anything.
-        if self.send_to_client.is_none() {
+        if self.send_to_client.len() == 0 {
             return Some(true);
         }
 
@@ -200,8 +201,11 @@ impl ConnectionSource {
         //Flush stream, to clear buffers.
         ok_macro!(self, self.server_stream.flush());
         //Transfer send data to local buffer, so that we can set tthe send_to_client to None for new data if there is queue.
-        let mut response: Vec<u8> = self.send_to_client.as_mut().unwrap().to_vec();
-        self.send_to_client = None;
+        let res = self.send_to_client.pop_front();
+        if res.is_none() {
+            return Some(true);
+        }
+        let mut response = res.unwrap();
 
         debug!(target: &self.server_token.0.to_string(),
             "Write response: \r\n{}",
@@ -218,7 +222,7 @@ impl ConnectionSource {
         //use Macro to fill in error handling
         write_error_handling!(self, ret);
 
-        self.send_to_client = None;
+//        self.send_to_client = None;
         if !self.do_tls {
             // Works for HTTP, but for HTTPS it gives ERR_CONNECTION_REFUSED
             self.closing = true;
@@ -235,33 +239,6 @@ impl ConnectionSource {
         //it, else we need to reregister.
         if self.forward_stream.is_none() {
             debug!(target: &self.server_token.0.to_string(),"Read starting forward stream.");
-            //Ok so the forward_stream did not exist.
-            //We will check wich IP we need for the forward_stream to connect too.
-            //TODO, we need a hash or db interface too look this up.
-            // self.forward_stream = if self.tls_session.is_some()
-            //     && self
-            //         .tls_session
-            //         .as_mut()
-            //         .unwrap()
-            //         .get_sni_hostname()
-            //         .is_some()
-            //     && self
-            //         .tls_session
-            //         .as_mut()
-            //         .unwrap()
-            //         .get_sni_hostname()
-            //         .unwrap()
-            //         == "icm.imcode.com"
-            // {
-            //     //If icm.imcode.com, then redirect to its IP and port.
-            //     trace!(target: &self.server_token.0.to_string(),"Using forwardhost icm tomcat");
-            //     Some(TcpStream::connect("192.168.96.59:10132".parse().unwrap()).unwrap())
-            // } else {
-            //     //Anything else are assigned the following port and IP
-            //     trace!(target: &self.server_token.0.to_string(),"Using forward host prod");
-            //     Some(TcpStream::connect("192.168.96.54:80".parse().unwrap()).unwrap())
-            // };
-
             self.forward_stream = if self.tls_session.is_some()
                 && self
                     .tls_session
@@ -304,11 +281,11 @@ impl ConnectionSource {
             debug!(target: &self.server_token.0.to_string(),"Read Server ReCreated...");
         }
         //Getting len just for logging
-        let len = self.send_to_farward.as_mut().unwrap().len();
-        trace!(
-            "Read Confirming send_to_forward has data:\r\n{}",
-            String::from_utf8_lossy(&self.send_to_farward.as_mut().unwrap()[..min(len, 1024)])
-        );
+        // let len = self.send_to_farward.len();
+        // trace!(
+        //     "Read Confirming send_to_forward has data:\r\n{}",
+        //     String::from_utf8_lossy(&self.send_to_farward.as_mut().unwrap()[..min(len, 1024)])
+        // );
     }
 }
 
@@ -348,7 +325,7 @@ impl ConnectionSource {
         let fwd_ok_w = forward
             && event.is_writable()
             && self.forward_stream.is_some()
-            && self.send_to_farward.is_some();
+            && self.send_to_farward.len()>0;
 
         //if tls_ok_r is true we have tls and we are ok to read the tls_session
         let tls_ok_r = event.is_readable() && !forward && self.do_tls;
@@ -361,15 +338,15 @@ impl ConnectionSource {
             && self.tls_session.as_mut().unwrap().wants_write();
 
         //if cli_ok_r is true we are ok to read from the client via server_stream
-        let cli_ok_r = !forward && event.is_readable();
+        let cli_ok_r = event.is_readable();
         //if fwd_ok_w is true we are ok to write to the client via server_stream
-        let cli_ok_w = !forward && event.is_writable();
+        let cli_ok_w = event.is_writable();
 
         // Workaround for not finding a way to get tls to work in MIO ekosystem statemachine environment,
         // and seem to need read write on for the socket all the time.
         if !forward
             && event.is_writable()
-            && self.send_to_client.is_none()
+            && self.send_to_client.len()>0
             && !tls_ok_r
             && !tls_ok_w
         {
@@ -507,11 +484,14 @@ impl ConnectionSource {
         if fwd_ok_w {
             trace!(target: &self.server_token.0.to_string(),"Entering FWD_W ({})", success);
 
+            let send_this = self.send_to_farward.pop_front().unwrap();
+
+
             //Just for not logging too much information in debug
-            let len = min(self.send_to_farward.as_mut().unwrap().len(), 2048);
+            let len = min(send_this.len(), 2048);
             debug!(target: &self.server_token.0.to_string(),
                 "ForWrite Forwarding: \r\n{}",
-                String::from_utf8_lossy(&self.send_to_farward.as_mut().unwrap()[..len])
+                String::from_utf8_lossy(&send_this[..len])
             );
 
             //Sending the request collected from client to backend host.
@@ -519,14 +499,14 @@ impl ConnectionSource {
                 .forward_stream
                 .as_mut()
                 .expect("ForWrite expecting stream");
-            let ret = stream.write(self.send_to_farward.as_mut().unwrap());
+            let ret = stream.write(&send_this);
 
             //Handle errors with macro
             write_error_handling!(self, ret);
 
             //Flush and reset
             ok_macro!(self, stream.flush());
-            self.send_to_farward = None;
+            // self.send_to_farward = None;
 
             //Reregister for reading so we can collect the backend answer.
             trace!(target: &self.server_token.0.to_string(),"ForWrite Reregistering for READ");
@@ -543,7 +523,7 @@ impl ConnectionSource {
             trace!(target: &self.server_token.0.to_string(),"Entering FWD_R ({})", success);
 
             // Test so that we actually have nothing in the que first, and that we have a stream to work with.
-            if self.send_to_client.is_none() && self.forward_stream.is_some() {
+//            if self.send_to_client.is_none() && self.forward_stream.is_some() {
                 let mut received_data = Vec::new();
                 //Loop to read all incomming data
                 loop {
@@ -560,12 +540,12 @@ impl ConnectionSource {
                     String::from_utf8_lossy(&received_data[..cmp::min(received_data.len(), 256)])
                 );
                 //Set data for server_stream to send to client.
-                self.send_to_client = Some(received_data);
+                self.send_to_client.push_back(received_data);
 
                 //Reregister the server to write the new DATA.
                 self.reregister(registry, self.server_token, Interest::WRITABLE)
                     .unwrap();
-            }
+//            }
 
             trace!(target: &self.server_token.0.to_string(),"Exiting FWD_R ({})", success);
         } //DONE fwd_ok_r
