@@ -14,7 +14,7 @@ use std::{
     io,
     io::{Read, Write},
     net,
-    sync::Arc, time::Instant,
+    sync::Arc,
 };
 
 use crate::{ok_macro, process_error_handling, read_error_handling, write_error_handling};
@@ -36,7 +36,7 @@ pub struct ConnectionSource {
     closing: bool,
     done_closing: bool,
     server_reregistered: bool,
-    counter: u16,
+    //counter: u16,
     bytes_sent: usize,
     bytes_received:usize,
 
@@ -164,7 +164,6 @@ impl ConnectionSource {
             done_closing: false,
             server_reregistered: false,
             forward_host: String::new(),
-            counter: 0,
             bytes_sent: 0,
             bytes_received:0,     
         };
@@ -418,13 +417,7 @@ impl ConnectionSource {
         token: Token,
     ) -> Option<bool> {
         // Too much trace!(target: &self.server_token.0.to_string(),"Main incomming Event: \r\n{:?}",event);
-        //self.counter += 1;
-        if self.counter > 5 {
-            info!("Counted enough {} ",self.counter);
-            
-            self.closing =true;
-            self.close_all(registry);
-        }
+
         //Success is used to check if thefunctions called have succeeded or not, we might
         // in the future decide closing depending on this, we will have too see.
         // And for logging to see where the code fails depending on where this changes.
@@ -576,8 +569,8 @@ impl ConnectionSource {
         //     self.counter = 0;
         // }
 
-        trace!(target: &self.server_token.0.to_string(),"\r\ntls_ok_r: {}\r\ntls_ok_w: {}\r\ncli_ok_r: {}\r\ncli_ok_w: {}\r\nfwd_ok_r: {}\r\nfwd_ok_w: {}\r\nCounter: {}\r\n",
-        tls_ok_r,tls_ok_w,cli_ok_r,cli_ok_w,fwd_ok_r,fwd_ok_w,self.counter);
+        trace!(target: &self.server_token.0.to_string(),"tls_ok_r: {} ntls_ok_w: {} cli_ok_r: {} cli_ok_w: {} fwd_ok_r: {} nfwd_ok_w: {}",
+        tls_ok_r,tls_ok_w,cli_ok_r,cli_ok_w,fwd_ok_r,fwd_ok_w);
 
         /*
 
