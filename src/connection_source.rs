@@ -127,7 +127,7 @@ impl Source for ConnectionSource {
             server_port = self.server_stream.local_addr().unwrap().port();
         }
 
-        error!(target: &self.server_token.0.to_string(),
+        debug!(target: &self.server_token.0.to_string(),
                     "Connection  {} -> {}:{} => {}  to_client:{} from_client:{}",
                     server_addr, 
                     sni_host, 
