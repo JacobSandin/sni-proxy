@@ -1,7 +1,37 @@
 #Rename to improxy.env in same or parent dir of where app run
-
+#
 MARIA_URI=mysql://user:password@127.0.0.1:3306/certlookup
-
+#
 SELECT_CRT_TABLE="SELECT id, fullchain, privkey, forward, active from certificate"
-
+#
 SELECT_DN_FROM_CERT_ID="SELECT id, cert_id, dn, ca_primary from cert_domainname WHERE cert_id='{cert_id}';"
+#
+#
+#
+#   Not implemented but wanted
+#####################################
+#
+#
+DEFAULT_CRT_ID=11123
+#
+#HTTP= #to disable
+HTTP=0.0.0.0:80
+#
+#HTTPS=     #To disable.... hmm would that ever be needed.. its kinda what we do :)
+HTTPS=0.0.0.0:443
+#
+CACHE_DIR=/var/lib/improxy/cashe
+CACHE_FILES=gif;png;js      #Probably should be in database and per URI in some way
+CACHE_DIRS=/images;/java_script; #Same as above should be in db per URI
+CACHE_RESET_PREFIX=/un_chache       #Used to reset cache.
+#
+#We also need to have some smart cache timers, and checks.. maby depending on how much trafic or requests
+#And also manual ofc.
+#
+#
+LOGDIR=/var/log/improxy/{cert_id}/
+#LOGDIR=/var/log/improxy/{requested_host}/
+#LOGDIR=/var/log/improxy/{backend_host}/        #WE dont have the name right now, or should we use IP part of the forward?
+#
+#
+#

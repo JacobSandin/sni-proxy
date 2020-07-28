@@ -96,10 +96,10 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut unique_token = Token(2);
 
     debug!(target: "0","Starting HTTPS_SERVER");
-    let mut https_server = TcpListener::bind("127.0.0.1:443".parse()?)?;
+    let mut https_server = TcpListener::bind("0.0.0.0:443".parse()?)?;
 
     debug!(target: "0","Starting HTTP_SERVER");
-    let mut http_server = TcpListener::bind("127.0.0.1:80".parse()?)?;
+    let mut http_server = TcpListener::bind("0.0.0.0:80".parse()?)?;
 
     trace!(target: "0","Adding HTTPS_SERVER to polling");
     poll.registry()
