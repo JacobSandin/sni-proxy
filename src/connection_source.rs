@@ -114,11 +114,24 @@ impl Source for ConnectionSource {
                 }
         }
 
+        let mut server_addr =String::new();
+        let mut sni_host="";
+        let mut server_port=0;
+        if self.server_stream.peer_addr().is_ok() {
+             server_addr = self.server_stream.peer_addr().unwrap().to_string()
+        }
+        if self.tls_session.is_some() && self.tls_session.as_mut().unwrap().get_sni_hostname().is_some() {
+            sni_host = self.tls_session.as_mut().unwrap().get_sni_hostname().unwrap();
+        }
+        if self.server_stream.local_addr().is_ok() {
+            server_port = self.server_stream.local_addr().unwrap().port();
+        }
+
         error!(target: &self.server_token.0.to_string(),
                     "Connection  {} -> {}:{} => {}  to_client:{} from_client:{}",
-                    self.server_stream.peer_addr().unwrap().to_string(), 
-                    self.tls_session.as_mut().unwrap().get_sni_hostname().unwrap(), 
-                    self.server_stream.local_addr().unwrap().port(),
+                    server_addr, 
+                    sni_host, 
+                    server_port,
                     self.forward_host,
                     self.bytes_received,
                     self.bytes_sent,
