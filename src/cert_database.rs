@@ -128,6 +128,13 @@ impl MariaSNIResolver {
     pub fn populate(&mut self, certs: &Vec<Certificate>) {
         for c in certs {
             let ck = c.verify_and_get_ck().expect("Trying to get a CK").clone();
+
+            if dotenv::var("DEFAULT_CRT_ID").is_ok() && 
+            c.id.to_string() == dotenv::var("DEFAULT_CRT_ID").unwrap() {
+                trace!("Default cert found! {}",&c.id);
+                self.default_cert = Some(ck.clone());
+            }
+
             self.cert_id_to_cert_lookup.insert(c.id, ck.clone());
             for dn in c.domain_names.as_ref().unwrap() {
                 trace!("{} mapping {} => {} ", c.id, dn.dn,c.forward);
@@ -141,7 +148,7 @@ impl ResolvesServerCert for MariaSNIResolver {
     fn resolve(&self, client_hello: rustls::ClientHello) -> Option<sign::CertifiedKey> {
         if client_hello.server_name().is_none() {
             trace!("Can't lookup db certificate: no SNI from session");
-            return None;
+            return self.default_cert.clone();
         }
         let name: &str = client_hello.server_name().unwrap().into();
         trace!(
@@ -158,10 +165,10 @@ impl ResolvesServerCert for MariaSNIResolver {
                 Some(opt_ck.unwrap().clone())
 
             } else {
-                None
+                return self.default_cert.clone();
             }
         } else {
-            None
+            return self.default_cert.clone();
         }
     }
 }

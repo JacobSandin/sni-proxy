@@ -38,25 +38,48 @@ extern crate log;
 use log::{debug, error, info, trace, warn};
 
 extern crate simplelog;
-use cert_database::{MariaSNIResolver, get_all_certificates};
+use cert_database::{get_all_certificates, MariaSNIResolver};
 use simplelog::*;
 use std::fs::File;
 
 use dotenv;
 
-
 fn main() -> Result<(), Box<dyn Error>> {
     dotenv::from_filename("improxy.env").ok();
 
-    CombinedLogger::init(vec![
-        TermLogger::new(LevelFilter::Debug, Config::default(), TerminalMode::Mixed),
-        WriteLogger::new(
+    let mut logger: Vec<Box<dyn SharedLogger>> = Vec::new();
+    if dotenv::var("TERM_LOG_LEVEL").is_ok() {
+        let term_log_level: LevelFilter = dotenv::var("TERM_LOG_LEVEL").unwrap().parse().unwrap();
+        logger.push(TermLogger::new(
+            term_log_level,
+            Config::default(),
+            TerminalMode::Mixed,
+        ));
+    } else {
+        logger.push(TermLogger::new(
+            LevelFilter::Debug,
+            Config::default(),
+            TerminalMode::Mixed,
+        ));
+    }
+
+    if dotenv::var("LOG_FILE_LEVEL").is_ok() && dotenv::var("LOG_FILE").is_ok() {
+        let log_file_level: LevelFilter = dotenv::var("LOG_FILE_LEVEL").unwrap().parse().unwrap();
+        let log_file = dotenv::var("LOG_FILE").unwrap();
+        logger.push(WriteLogger::new(
+            log_file_level,
+            Config::default(),
+            File::create(log_file).unwrap(),
+        ));
+    } else {
+        logger.push(WriteLogger::new(
             LevelFilter::Trace,
             Config::default(),
             File::create("../trace.log").unwrap(),
-        ),
-    ])
-    .unwrap();
+        ));
+    }
+
+    CombinedLogger::init(logger).unwrap();
 
     trace!(target: "0","Poll creating new");
     let mut poll = Poll::new()?;
@@ -72,34 +95,46 @@ fn main() -> Result<(), Box<dyn Error>> {
     trace!(target: "0","Load forwards from database");
     let import_certificates = get_all_certificates();
     let mut forwards: HashMap<String, String> = HashMap::new();
-    for cert in import_certificates.iter().filter(|c| !c.forward.contains("127")) {
+    for cert in import_certificates
+        .iter()
+        .filter(|c| !c.forward.contains("127"))
+    {
         if cert.domain_names.is_some() {
             for dn in cert.domain_names.as_ref().unwrap() {
-                
                 if None == forwards.insert(String::from(&dn.dn), String::from(&cert.forward)) {
-                   //Hosts println!("127.0.0.1   {0}  # {0}  => {1}",dn.dn,cert.forward);
+                    //Hosts println!("127.0.0.1   {0}  # {0}  => {1}",dn.dn,cert.forward);
                 }
             }
         }
     }
-    //Debug if anyone is listening. 
+    //Debug if anyone is listening.
     //TODO we might actually shoul only do this if any debug is on
-    for (f,w) in forwards.iter() {
-//        println!("127.0.0.1   {0}  # {0}  => {1}",f,w);
+    for (f, w) in forwards.iter() {
+        //        println!("127.0.0.1   {0}  # {0}  => {1}",f,w);
         debug!(target: "0","forward mapped {}  => {}",f,w);
     }
 
     //Create an arc of the forwards
-    let forwards:Arc<HashMap<String,String>> = Arc::from(forwards); 
+    let forwards: Arc<HashMap<String, String>> = Arc::from(forwards);
 
     trace!(target: "0","Crating unique Token with first number of 2, 0=HTTPS_SERVER 1=HTTP_SERVER");
     let mut unique_token = Token(2);
 
-    debug!(target: "0","Starting HTTPS_SERVER");
-    let mut https_server = TcpListener::bind("0.0.0.0:443".parse()?)?;
 
-    debug!(target: "0","Starting HTTP_SERVER");
-    let mut http_server = TcpListener::bind("0.0.0.0:80".parse()?)?;
+    let mut http_bind=String::from("0.0.0.0:80");
+    if dotenv::var("HTTP").is_ok() {
+        http_bind= dotenv::var("HTTP").unwrap();
+    }
+    let mut https_bind=String::from("0.0.0.0:443");
+    if dotenv::var("HTTPS").is_ok() {
+        https_bind= dotenv::var("HTTPS").unwrap();
+    }
+
+    debug!(target: "0","Starting HTTPS_SERVER bind({})",https_bind);
+    let mut https_server = TcpListener::bind(https_bind.parse()?)?;
+
+    debug!(target: "0","Starting HTTP_SERVER bind({})",http_bind);
+    let mut http_server = TcpListener::bind(http_bind.parse()?)?;
 
     trace!(target: "0","Adding HTTPS_SERVER to polling");
     poll.registry()
@@ -114,9 +149,9 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     if SNI_TLS_CERTS {
         trace!(target: "0","Loading mariadb resolver");
-        let mut resolver=MariaSNIResolver::new();
-        resolver.populate(&import_certificates);        
-        
+        let mut resolver = MariaSNIResolver::new();
+        resolver.populate(&import_certificates);
+
         //trace!(target: "0","Loading resolver");
         //let resolver = load_resolver();
 
@@ -141,7 +176,6 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     debug!(target: "0","Starting poll loop");
     loop {
-
         poll.poll(&mut events, None)?;
 
         for event in events.iter() {
@@ -173,19 +207,19 @@ fn main() -> Result<(), Box<dyn Error>> {
                     );
                 }
                 token => {
-                   //Too much logging  trace!(target: "0","New token action: {:?}", event);
+                    //Too much logging  trace!(target: "0","New token action: {:?}", event);
                     let server_token =
                         if let Some(server_token) = forward_connections.get(&token).clone() {
-//Too much logging                            trace!(target: "0","Found forward token, finding server!");
+                            //Too much logging                            trace!(target: "0","Found forward token, finding server!");
                             server_token.borrow_mut().clone()
                         } else {
-//Too much logging                            trace!(target: "0","Found no forward token, using supplied token!");
+                            //Too much logging                            trace!(target: "0","Found no forward token, using supplied token!");
                             token
                         };
 
                     let success: bool = if let Some(my_session) = connections.get_mut(&server_token)
                     {
-//Too much logging                        trace!(target: "0","Found session, and calling it"); //: {:?}", my_session);
+                        //Too much logging                        trace!(target: "0","Found session, and calling it"); //: {:?}", my_session);
                         my_session
                             .borrow_mut()
                             .handle_connection_event(poll.registry(), event, token)
@@ -213,7 +247,7 @@ fn do_server_accept(
     unique_token: &mut Token,
     connections: &mut HashMap<Token, RefCell<ConnectionSource>>,
     forward_connections: &mut HashMap<Token, RefCell<Token>>,
-    forwards: &Arc<HashMap<String,String>>,
+    forwards: &Arc<HashMap<String, String>>,
     poll: &mut Poll,
     config: &mut rustls::ServerConfig,
     tls: bool,
@@ -250,8 +284,13 @@ fn do_server_accept(
             None
         };
 
-        let m_session: ConnectionSource =
-            ConnectionSource::new(connection, server_token, forward_token, tls_session,Arc::clone(forwards));
+        let m_session: ConnectionSource = ConnectionSource::new(
+            connection,
+            server_token,
+            forward_token,
+            tls_session,
+            Arc::clone(forwards),
+        );
 
         trace!(
             "{} created connection {:?} and inserting to connections HashMap",

@@ -6,6 +6,17 @@ SELECT_CRT_TABLE="SELECT id, fullchain, privkey, forward, active from certificat
 #
 SELECT_DN_FROM_CERT_ID="SELECT id, cert_id, dn, ca_primary from cert_domainname WHERE cert_id='{cert_id}';"
 #
+# Logging
+TERM_LOG_LEVEL="debug" #info warn error debug trace
+LOG_FILE_LEVEL="trace"
+LOG_FILE="../trace.log"
+#
+#
+#HTTP= #to disable
+HTTP=0.0.0.0:80
+#
+#HTTPS=     #To disable.... hmm would that ever be needed.. its kinda what we do :)
+HTTPS=0.0.0.0:443
 #
 #
 #   Not implemented but wanted
@@ -14,11 +25,6 @@ SELECT_DN_FROM_CERT_ID="SELECT id, cert_id, dn, ca_primary from cert_domainname 
 #
 DEFAULT_CRT_ID=11123
 #
-#HTTP= #to disable
-HTTP=0.0.0.0:80
-#
-#HTTPS=     #To disable.... hmm would that ever be needed.. its kinda what we do :)
-HTTPS=0.0.0.0:443
 #
 CACHE_DIR=/var/lib/improxy/cashe
 CACHE_FILES=gif;png;js      #Probably should be in database and per URI in some way
