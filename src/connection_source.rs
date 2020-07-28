@@ -10,11 +10,11 @@ use rustls::{Session, TLSError};
 use cmp::min;
 use std::{
     cmp,
-    collections::{VecDeque, HashMap},
+    collections::{HashMap, VecDeque},
     io,
     io::{Read, Write},
     net,
-    sync::Arc,
+    sync::Arc, time::Instant,
 };
 
 use crate::{ok_macro, process_error_handling, read_error_handling, write_error_handling};
@@ -37,6 +37,9 @@ pub struct ConnectionSource {
     done_closing: bool,
     server_reregistered: bool,
     counter: u16,
+    bytes_sent: usize,
+    bytes_received:usize,
+
 }
 
 // All functions here are needed to comply with the source implementation
@@ -102,12 +105,25 @@ impl Source for ConnectionSource {
     fn deregister(&mut self, registry: &Registry) -> io::Result<()> {
         trace!(target: &self.server_token.0.to_string(),"Deregistering using ConnectionSource function");
         if self.forward_stream.is_some() {
-            self.forward_stream
+           match self.forward_stream
                 .as_mut()
                 .unwrap()
-                .deregister(registry)
-                .expect("Could not deregister forward stream");
+                .deregister(registry) {
+                    Ok(_) =>(),
+                    Err(e) => error!("Error deregistering forward_stream {:?}", e),
+                }
         }
+
+        error!(target: &self.server_token.0.to_string(),
+                    "Connection  {} -> {}:{} => {}  to_client:{} from_client:{}",
+                    self.server_stream.peer_addr().unwrap().to_string(), 
+                    self.tls_session.as_mut().unwrap().get_sni_hostname().unwrap(), 
+                    self.server_stream.local_addr().unwrap().port(),
+                    self.forward_host,
+                    self.bytes_received,
+                    self.bytes_sent,
+                );
+
         self.server_stream.deregister(registry)
     }
 }
@@ -136,6 +152,8 @@ impl ConnectionSource {
             server_reregistered: false,
             forward_host: String::new(),
             counter: 0,
+            bytes_sent: 0,
+            bytes_received:0,     
         };
         m_session
     }
@@ -143,7 +161,7 @@ impl ConnectionSource {
 
 impl ConnectionSource {
     // Reads the server_stream for client requests.
-    fn local_reader(&mut self, registry: &Registry) -> Option<bool> {
+    fn client_reader(&mut self, registry: &Registry) -> Option<bool> {
         trace!(
             "Read Checking read if shutdown ({}) returning false",
             self.done_closing
@@ -157,7 +175,7 @@ impl ConnectionSource {
         //Loop untill we read all data
         loop {
             //Set up collect buffer
-            let mut buf = [0; 1280];
+            let mut buf = [0; 512];
             trace!(target: &self.server_token.0.to_string(),"Read Reading buffer as tls={}", self.do_tls);
             //Chose the right stream to read depending on tls or not.
             let res: Result<usize, std::io::Error> = if self.do_tls {
@@ -177,6 +195,8 @@ impl ConnectionSource {
         //If we got two linefeeds here it might actually be an html request.
         //TODO: Better parsing to decide, if it is a real request and also to add
         //proxy headers.
+        self.bytes_sent += &received_data.as_slice().len();
+
         if String::from_utf8_lossy(&received_data).contains("\r\n\r\n") {
             self.send_to_farward.push_back(received_data);
             //= Some(received_data);
@@ -190,14 +210,14 @@ impl ConnectionSource {
     //Write response that the forward stream has collected from backend to the client
     //via the server_stream
     #[allow(unused_variables)]
-    fn local_writer(&mut self, event: &Event, registry: &Registry) -> Option<bool> {
+    fn client_writer(&mut self, event: &Event, registry: &Registry) -> Option<bool> {
         //If we dont have anything to send, we cant realy do anything.
         if self.send_to_client.len() == 0 {
             return Some(true);
         }
 
         //Counter is mostly for debuging.
-        self.counter = 0;
+        //self.counter = 0;
         //Flush stream, to clear buffers.
         ok_macro!(self, self.server_stream.flush());
         //Transfer send data to local buffer, so that we can set tthe send_to_client to None for new data if there is queue.
@@ -207,7 +227,7 @@ impl ConnectionSource {
         }
         let mut response = res.unwrap();
 
-        debug!(target: &self.server_token.0.to_string(),
+        trace!(target: &self.server_token.0.to_string(),
             "Write response: \r\n{}",
             String::from_utf8_lossy(&response[..min(1024, response.len())])
         );
@@ -222,13 +242,81 @@ impl ConnectionSource {
         //use Macro to fill in error handling
         write_error_handling!(self, ret);
 
-//        self.send_to_client = None;
-        if !self.do_tls {
-            // Works for HTTP, but for HTTPS it gives ERR_CONNECTION_REFUSED
-            self.closing = true;
-        }
+        self.bytes_received += &response.as_slice().len();
+        
+        //        self.send_to_client = None;
         trace!(target: &self.server_token.0.to_string(),"Write DONE");
+        if self.send_to_client.len() == 0 && self.bytes_sent >0 {
+            //self.counter=0;
+            // info!("Whassup");
+            // self.timeout = Instant::now();
+        //     self.closing =true;
+        }
         return Some(true);
+    }
+}
+
+impl ConnectionSource {
+    fn forward_reader(&mut self, registry: &Registry) -> Option<bool> {
+        // Test so that we actually have nothing in the que first, and that we have a stream to work with.
+        //            if self.send_to_client.is_none() && self.forward_stream.is_some() {
+        let mut received_data = Vec::new();
+        //Loop to read all incomming data
+        loop {
+            //TODO: check that the buffer is not to small or too big, wich is normal?
+            let mut buf = [0; 1280];
+            let res = self.forward_stream.as_mut().unwrap().read(&mut buf);
+            trace!(target: &self.server_token.0.to_string(),"ForRead Checking read errors");
+            //Send along to macro for errorhandling.
+            read_error_handling!(self, res, received_data, buf);
+        }
+
+        trace!(target: &self.server_token.0.to_string(),
+            "ForRead Got data from forward host: \r\n{}",
+            String::from_utf8_lossy(&received_data[..cmp::min(received_data.len(), 256)])
+        );
+        //Set data for server_stream to send to client.
+        self.send_to_client.push_back(received_data);
+
+        //Reregister the server to write the new DATA.
+        self.reregister(registry, self.server_token, Interest::WRITABLE)
+            .unwrap();
+        //            }
+        Some(true)
+    }
+
+    fn forward_writer(&mut self, registry: &Registry) -> Option<bool> {
+        let send_this = self.send_to_farward.pop_front().unwrap();
+
+        //Just for not logging too much information in debug
+        let len = min(send_this.len(), 2048);
+        trace!(target: &self.server_token.0.to_string(),
+            "ForWrite Forwarding: \r\n{}",
+            String::from_utf8_lossy(&send_this[..len])
+        );
+
+        //Sending the request collected from client to backend host.
+        let stream = self
+            .forward_stream
+            .as_mut()
+            .expect("ForWrite expecting stream");
+        let ret = stream.write(&send_this);
+
+        //Handle errors with macro
+        write_error_handling!(self, ret);
+
+        //Flush and reset
+        ok_macro!(self, stream.flush());
+        // self.send_to_farward = None;
+
+        //Reregister for reading so we can collect the backend answer.
+        trace!(target: &self.server_token.0.to_string(),"ForWrite Reregistering for READ");
+        ok_macro!(
+            self,
+            self.reregister(registry, self.forward_token, Interest::READABLE)
+        );
+
+        Some(true)
     }
 
     //Used by read above to start a forward_stream to handle sending along the request to
@@ -238,7 +326,7 @@ impl ConnectionSource {
         //We need if the forward_stream exists or not. If it does not exist we need to create
         //it, else we need to reregister.
         if self.forward_stream.is_none() {
-            debug!(target: &self.server_token.0.to_string(),"Read starting forward stream.");
+            trace!(target: &self.server_token.0.to_string(),"Read starting forward stream.");
             self.forward_stream = if self.tls_session.is_some()
                 && self
                     .tls_session
@@ -259,7 +347,14 @@ impl ConnectionSource {
                     .unwrap()
                     .parse()
                     .unwrap();
-                debug!(target: &self.server_token.0.to_string(),"Forwarding {} => {}", sni_hostname, adress);
+
+                info!(target: &self.server_token.0.to_string(),
+                    "Connection established {} -> {}:{} => {}",
+                    self.server_stream.peer_addr().unwrap().to_string(), 
+                    sni_hostname, 
+                    self.server_stream.local_addr().unwrap().port(),
+                    adress);
+
                 Some(TcpStream::connect(adress).unwrap())
             } else {
                 //Anything else are assigned the following port and IP
@@ -272,13 +367,13 @@ impl ConnectionSource {
             trace!(target: &self.server_token.0.to_string(),"Read Registering forward for WRITE");
             self.register(registry, self.forward_token, Interest::WRITABLE)
                 .ok();
-            debug!(target: &self.server_token.0.to_string(),"Read Server Created...");
+            trace!(target: &self.server_token.0.to_string(),"Read Server Created...");
         } else {
             //We already have a forward_stream so lets just reregister that one.
             //We only need to write as we just filled in data for it to send.
             self.reregister(registry, self.forward_token, Interest::WRITABLE)
                 .ok();
-            debug!(target: &self.server_token.0.to_string(),"Read Server ReCreated...");
+            trace!(target: &self.server_token.0.to_string(),"Read Server ReCreated...");
         }
         //Getting len just for logging
         // let len = self.send_to_farward.len();
@@ -310,7 +405,13 @@ impl ConnectionSource {
         token: Token,
     ) -> Option<bool> {
         // Too much trace!(target: &self.server_token.0.to_string(),"Main incomming Event: \r\n{:?}",event);
-
+        //self.counter += 1;
+        if self.counter > 5 {
+            info!("Counted enough {} ",self.counter);
+            
+            self.closing =true;
+            self.close_all(registry);
+        }
         //Success is used to check if thefunctions called have succeeded or not, we might
         // in the future decide closing depending on this, we will have too see.
         // And for logging to see where the code fails depending on where this changes.
@@ -325,7 +426,7 @@ impl ConnectionSource {
         let fwd_ok_w = forward
             && event.is_writable()
             && self.forward_stream.is_some()
-            && self.send_to_farward.len()>0;
+            && self.send_to_farward.len() > 0;
 
         //if tls_ok_r is true we have tls and we are ok to read the tls_session
         let tls_ok_r = event.is_readable() && !forward && self.do_tls;
@@ -346,7 +447,7 @@ impl ConnectionSource {
         // and seem to need read write on for the socket all the time.
         if !forward
             && event.is_writable()
-            && self.send_to_client.len()>0
+            && self.send_to_client.len() > 0
             && !tls_ok_r
             && !tls_ok_w
         {
@@ -355,7 +456,7 @@ impl ConnectionSource {
             return Some(true);
         };
 
-        debug!(target: &self.server_token.0.to_string(),
+        trace!(target: &self.server_token.0.to_string(),
             "Main Is clientThread ({}) or Is forwardThread ({})",
             token == self.server_token,
             token == self.forward_token
@@ -454,13 +555,13 @@ impl ConnectionSource {
         //Not realy used, its mostly to track infinite loops that we shoukd control,
         //even though we are in an infinite loop we should not process stuff when it is
         //not needed.
-        if self.counter > 20 {
-            ok_macro!(self, self.reregister(registry, token, Interest::READABLE));
-        } else if !tls_ok_r && !tls_ok_w && !cli_ok_r && cli_ok_w && !fwd_ok_r && !fwd_ok_w {
-            self.counter += 1;
-        } else {
-            self.counter = 0;
-        }
+        // if self.counter > 20 {
+        //     ok_macro!(self, self.reregister(registry, token, Interest::READABLE));
+        // } else if !tls_ok_r && !tls_ok_w && !cli_ok_r && cli_ok_w && !fwd_ok_r && !fwd_ok_w {
+        //    self.counter += 1;
+        // } else {
+        //     self.counter = 0;
+        // }
 
         trace!(target: &self.server_token.0.to_string(),"\r\ntls_ok_r: {}\r\ntls_ok_w: {}\r\ncli_ok_r: {}\r\ncli_ok_w: {}\r\nfwd_ok_r: {}\r\nfwd_ok_w: {}\r\nCounter: {}\r\n",
         tls_ok_r,tls_ok_w,cli_ok_r,cli_ok_w,fwd_ok_r,fwd_ok_w,self.counter);
@@ -484,36 +585,7 @@ impl ConnectionSource {
         if fwd_ok_w {
             trace!(target: &self.server_token.0.to_string(),"Entering FWD_W ({})", success);
 
-            let send_this = self.send_to_farward.pop_front().unwrap();
-
-
-            //Just for not logging too much information in debug
-            let len = min(send_this.len(), 2048);
-            debug!(target: &self.server_token.0.to_string(),
-                "ForWrite Forwarding: \r\n{}",
-                String::from_utf8_lossy(&send_this[..len])
-            );
-
-            //Sending the request collected from client to backend host.
-            let stream = self
-                .forward_stream
-                .as_mut()
-                .expect("ForWrite expecting stream");
-            let ret = stream.write(&send_this);
-
-            //Handle errors with macro
-            write_error_handling!(self, ret);
-
-            //Flush and reset
-            ok_macro!(self, stream.flush());
-            // self.send_to_farward = None;
-
-            //Reregister for reading so we can collect the backend answer.
-            trace!(target: &self.server_token.0.to_string(),"ForWrite Reregistering for READ");
-            ok_macro!(
-                self,
-                self.reregister(registry, self.forward_token, Interest::READABLE)
-            );
+            self.forward_writer(registry);
 
             trace!(target: &self.server_token.0.to_string(),"Exiting FWD_W ({})", success);
         }
@@ -522,30 +594,7 @@ impl ConnectionSource {
         if fwd_ok_r {
             trace!(target: &self.server_token.0.to_string(),"Entering FWD_R ({})", success);
 
-            // Test so that we actually have nothing in the que first, and that we have a stream to work with.
-//            if self.send_to_client.is_none() && self.forward_stream.is_some() {
-                let mut received_data = Vec::new();
-                //Loop to read all incomming data
-                loop {
-                    //TODO: check that the buffer is not to small or too big, wich is normal?
-                    let mut buf = [0; 1280];
-                    let res = self.forward_stream.as_mut().unwrap().read(&mut buf);
-                    trace!(target: &self.server_token.0.to_string(),"ForRead Checking read errors");
-                    //Send along to macro for errorhandling.
-                    read_error_handling!(self, res, received_data, buf);
-                }
-
-                debug!(target: &self.server_token.0.to_string(),
-                    "ForRead Got data from forward host: \r\n{}",
-                    String::from_utf8_lossy(&received_data[..cmp::min(received_data.len(), 256)])
-                );
-                //Set data for server_stream to send to client.
-                self.send_to_client.push_back(received_data);
-
-                //Reregister the server to write the new DATA.
-                self.reregister(registry, self.server_token, Interest::WRITABLE)
-                    .unwrap();
-//            }
+            self.forward_reader(registry);
 
             trace!(target: &self.server_token.0.to_string(),"Exiting FWD_R ({})", success);
         } //DONE fwd_ok_r
@@ -598,7 +647,6 @@ impl ConnectionSource {
             //Finally process messages, in the queue
             trace!(target: &self.server_token.0.to_string(),"New tls read: processing packages");
             let processed = self.tls_session.as_mut().unwrap().process_new_packets();
-            error!(target: &self.server_token.0.to_string(),"New tls read: cannot process packet: {:?}", processed);
             //Use macro to do error handling.
             process_error_handling!(self, processed);
         }
@@ -611,14 +659,14 @@ impl ConnectionSource {
         trace!(target: &self.server_token.0.to_string(),"MAIN closing: ({})", self.closing);
         if cli_ok_r {
             trace!(target: &self.server_token.0.to_string(),"Entering CLI_R ({})", success);
-            success = self.local_reader(registry).unwrap();
+            success = self.client_reader(registry).unwrap();
             trace!(target: &self.server_token.0.to_string(),"Exiting CLI_R ({})", success);
         }
 
         trace!(target: &self.server_token.0.to_string(),"MAIN closing: ({})", self.closing);
         if cli_ok_w {
             trace!(target: &self.server_token.0.to_string(),"Entering CLI_W ({})", success);
-            success = self.local_writer(event, registry).unwrap();
+            success = self.client_writer(event, registry).unwrap();
             trace!(target: &self.server_token.0.to_string(),"Exiting CLI_W ({})", success);
         }
 
@@ -642,7 +690,7 @@ impl ConnectionSource {
 
         //If we are not closing we need to check that everything is registered so that we dont
         //become dead in memory.
-        debug!(target: &self.server_token.0.to_string(),"Main registry");
+        trace!(target: &self.server_token.0.to_string(),"Main registry");
         //IF we have a server_stream not being registered during this cycle we need to reregister
         //it or it will not be called again, and die the slow death.
         //TODO: We probably need errorhandling here.
@@ -659,7 +707,7 @@ impl ConnectionSource {
         };
 
         // Flush any active streams or tls_session
-        debug!(target: &self.server_token.0.to_string(),"Main DONE");
+        trace!(target: &self.server_token.0.to_string(),"Main DONE");
         if self.do_tls {
             //TLS
             ok_macro!(self, self.tls_session.as_mut().unwrap().flush());
@@ -679,7 +727,7 @@ impl ConnectionSource {
     //
     fn close_all(&mut self, registry: &Registry) -> Option<bool> {
         trace!(target: &self.server_token.0.to_string(),"Enter: close_all closing connections");
-        debug!(target: &self.server_token.0.to_string(),"Closing all sockets!");
+        trace!(target: &self.server_token.0.to_string(),"Closing all sockets!");
         //If tls then shutdown the tls_session
         if self.do_tls {
             //We do flush to send everything buffered to connections.

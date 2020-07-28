@@ -47,7 +47,7 @@ impl ResolvesServerCert for MyResolvesServerCertUsingSNI {
             return None;
         }
         let name: &str = client_hello.server_name().unwrap().into();
-        debug!("trying to resolve name: {:?} for signature scheme: {:?}", name, client_hello.sigschemes());
+        trace!("trying to resolve name: {:?} for signature scheme: {:?}", name, client_hello.sigschemes());
 
         if let Some(dnsname) = client_hello.server_name() {
             if self.by_name.contains_key(dnsname.into()) {

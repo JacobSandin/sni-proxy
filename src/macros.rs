@@ -5,21 +5,23 @@ macro_rules! write_error_handling {
     ($self:ident, $F:ident) => {
         match $F {
             Ok(a) => {
+                $self.counter =0;
                 trace!(target: &$self.server_token.0.to_string(),"MACRO Write succeeded:\r\n {:?}",a);
-            }
+            },
             Err(ref err) if err.kind() == io::ErrorKind::WouldBlock => {
-                trace!(target: &$self.server_token.0.to_string(),"MACRO Write Error wouldblock ignoring \r\n{:?}",err);
-            }
+               trace!(target: &$self.server_token.0.to_string(),"MACRO Write Error wouldblock ignoring \r\n{:?}",err);
+            },
             Err(ref err) if err.kind() == io::ErrorKind::Interrupted => {
-                trace!(target: &$self.server_token.0.to_string(),"MACRO Write registering for mor write as we were interupted.\r\n{:?}",err);
-            }
+                error!(target: &$self.server_token.0.to_string(),"MACRO Write registering for mor write as we were interupted.\r\n{:?}",err);
+            },
             Err(ref err) if err.kind() == io::ErrorKind::ConnectionAborted => {
                 error!(target: &$self.server_token.0.to_string(),"MACRO Write Connection aborted (breaking)\r\n{:?}",err);
-            }
+                $self.counter +=1;
+            },
             Err(err) => {
                 error!(target: &$self.server_token.0.to_string(),"MACRO Write Unknown error no writing: \r\n{:?}",err);
                 $self.closing = true;
-            }
+            },
         };
     }
 }
@@ -31,12 +33,15 @@ macro_rules! read_error_handling {
     ($self:ident, $ret:ident, $receiver:ident, $buf:ident) => {
                 match $ret {
                     Ok(0) => {
-                        trace!(target: &$self.server_token.0.to_string(),"MACRO Read reading zero closing:({})", $self.closing);
+                        $self.counter += 1;
+                        info!(target: &$self.server_token.0.to_string(),"MACRO Read reading zero closing:({}) count {}", $self.closing,$self.counter);
+                        //$self.closing =true;
                         break;
                     }
                     Ok(n) => {
                         trace!(target: &$self.server_token.0.to_string(),"MACRO Read Transfering read buffer to datacollecter received_data {}",n);
                         $receiver.extend_from_slice(&$buf[..n]);
+                        $self.counter =0;
                     }
                     Err(e)if e.kind() == io::ErrorKind::WouldBlock => {
                         trace!(target: &$self.server_token.0.to_string(),"MACRO Read Would block\r\n{:?}",e);
@@ -47,7 +52,7 @@ macro_rules! read_error_handling {
                         continue;
                     }
                     Err(e) => {
-                        trace!(target: &$self.server_token.0.to_string(),"MACRO Read Unknown error : {:?}", e);
+                        error!(target: &$self.server_token.0.to_string(),"MACRO Read Unknown error : {:?}", e);
                         $self.closing = true;
                         return Some(false);
                     },

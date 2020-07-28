@@ -40,7 +40,7 @@ use log::{debug, error, info, trace, warn};
 extern crate simplelog;
 use cert_database::{get_all_certificates, MariaSNIResolver};
 use simplelog::*;
-use std::fs::File;
+use std::{time::Duration, fs::File};
 
 use dotenv;
 
@@ -78,8 +78,8 @@ fn main() -> Result<(), Box<dyn Error>> {
             File::create("../trace.log").unwrap(),
         ));
     }
-
     CombinedLogger::init(logger).unwrap();
+    trace!(target: "0","Log started!");
 
     trace!(target: "0","Poll creating new");
     let mut poll = Poll::new()?;
@@ -111,13 +111,13 @@ fn main() -> Result<(), Box<dyn Error>> {
     //TODO we might actually shoul only do this if any debug is on
     for (f, w) in forwards.iter() {
         //        println!("127.0.0.1   {0}  # {0}  => {1}",f,w);
-        debug!(target: "0","forward mapped {}  => {}",f,w);
+        info!(target: "0","forward mapped {}  => {}",f,w);
     }
 
     //Create an arc of the forwards
     let forwards: Arc<HashMap<String, String>> = Arc::from(forwards);
 
-    trace!(target: "0","Crating unique Token with first number of 2, 0=HTTPS_SERVER 1=HTTP_SERVER");
+    debug!(target: "0","Crating unique Token with first number of 2, 0=HTTPS_SERVER 1=HTTP_SERVER");
     let mut unique_token = Token(2);
 
 
@@ -130,10 +130,10 @@ fn main() -> Result<(), Box<dyn Error>> {
         https_bind= dotenv::var("HTTPS").unwrap();
     }
 
-    debug!(target: "0","Starting HTTPS_SERVER bind({})",https_bind);
+    info!(target: "0","Starting HTTPS_SERVER bind({})",https_bind);
     let mut https_server = TcpListener::bind(https_bind.parse()?)?;
 
-    debug!(target: "0","Starting HTTP_SERVER bind({})",http_bind);
+    info!(target: "0","Starting HTTP_SERVER bind({})",http_bind);
     let mut http_server = TcpListener::bind(http_bind.parse()?)?;
 
     trace!(target: "0","Adding HTTPS_SERVER to polling");
@@ -158,6 +158,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         trace!(target: "0","Adding cert resolver to config");
         config.cert_resolver = std::sync::Arc::new(resolver);
     } else {
+        //TODO: Single cert in config
         trace!(target: "0","Load certificate for single cert server");
         let certs = load_certs("../certificates/icm.prod.imcode.com/fullchain.pem");
         trace!(target: "0","Load cert key for single cert server");
@@ -174,9 +175,11 @@ fn main() -> Result<(), Box<dyn Error>> {
     trace!(target: "0","Adding protocolls to tls config http/https(1.1,1.2)");
     config.set_protocols(&[b"http/1.2".to_vec(), b"http/1.1".to_vec()]);
 
-    debug!(target: "0","Starting poll loop");
+    info!(target: "0","Spinning up servers");
     loop {
-        poll.poll(&mut events, None)?;
+
+//        poll.poll(&mut events, None)?;
+        poll.poll(&mut events, Some(Duration::from_millis(500)))?;
 
         for event in events.iter() {
             match event.token() {
@@ -252,7 +255,7 @@ fn do_server_accept(
     config: &mut rustls::ServerConfig,
     tls: bool,
 ) {
-    debug!(target: "0","Connection to {} server", https_or_http);
+    trace!(target: "0","Connection to {} server", https_or_http);
     loop {
         trace!(target: "0","{} loop tick", https_or_http);
         let (connection, address) = match server.accept() {
@@ -273,7 +276,7 @@ fn do_server_accept(
         unique_token.0 += 2;
         let server_token = Token(unique_token.0 - 2);
         let forward_token = Token(unique_token.0 - 1);
-        info!(
+        trace!(
             "{} accepted connection from: {} adding token {}",
             https_or_http, address, server_token.0
         );

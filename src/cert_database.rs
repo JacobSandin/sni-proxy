@@ -161,7 +161,7 @@ impl ResolvesServerCert for MariaSNIResolver {
             let id = opt_id.unwrap();
             let opt_ck = self.cert_id_to_cert_lookup.get(id).clone();
             if opt_ck.is_some() {
-                debug!("Resolved name {} as CK success",&name);
+                trace!("Resolved name {} as CK success",&name);
                 Some(opt_ck.unwrap().clone())
 
             } else {
