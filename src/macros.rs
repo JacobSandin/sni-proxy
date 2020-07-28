@@ -31,7 +31,7 @@ macro_rules! read_error_handling {
     ($self:ident, $ret:ident, $receiver:ident, $buf:ident) => {
                 match $ret {
                     Ok(0) => {
-                        info!(target: &$self.server_token.0.to_string(),"MACRO Read reading zero closing:({})", $self.closing);
+                        trace!(target: &$self.server_token.0.to_string(),"MACRO Read reading zero closing:({})", $self.closing);
                         //$self.closing =true;
                         break;
                     }
