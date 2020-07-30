@@ -28,7 +28,8 @@ macro_rules! write_error_handling {
 #[macro_export]
 macro_rules! read_error_handling {
     // This form normal socket errors and bellow is tls
-    ($self:ident, $ret:ident, $receiver:ident, $buf:ident) => {
+    ($self:ident, $ret:ident, $receiver:ident, $buf:ident,$wb:ident) => {
+        
                 match $ret {
                     Ok(0) => {
                         trace!(target: &$self.server_token.0.to_string(),"MACRO Read reading zero closing:({})", $self.closing);
@@ -41,7 +42,11 @@ macro_rules! read_error_handling {
                     }
                     Err(e)if e.kind() == io::ErrorKind::WouldBlock => {
                         trace!(target: &$self.server_token.0.to_string(),"MACRO Read Would block\r\n{:?}",e);
-                        break;
+                        //TODO: Add a collector from client instead... so we dont halt the MIO loop or implement threading/async
+                        if $wb.elapsed().as_millis() > 20 {
+                            break;
+                        }
+                        continue;
                     }
                     Err(e)if e.kind() == io::ErrorKind::Interrupted => {
                         trace!(target: &$self.server_token.0.to_string(),"MACRO Read Interupted\r\n{:?}",e);

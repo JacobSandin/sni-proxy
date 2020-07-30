@@ -14,7 +14,7 @@ use std::{
     io,
     io::{Read, Write},
     net,
-    sync::Arc,
+    sync::Arc, time::Instant,
 };
 use httparse;
 
@@ -188,6 +188,7 @@ impl ConnectionSource {
         //Setup a receiver buffer to collect read data.
         let mut received_data = Vec::new();
         //Loop untill we read all data
+        let now = Instant::now();
         loop {
             //Set up collect buffer
             let mut buf = [0; 512];
@@ -204,14 +205,13 @@ impl ConnectionSource {
             };
             trace!(target: &self.server_token.0.to_string(),"Read Checking read errors");
             //Handle errors with macro
-            read_error_handling!(self, res, received_data, buf);
+            read_error_handling!(self, res, received_data, buf,  now);
         }
 
         //If we got two linefeeds here it might actually be an html request.
         //TODO: Better parsing to decide, if it is a real request and also to add
         //proxy headers.
         self.bytes_sent += &received_data.as_slice().len();
-
         if String::from_utf8_lossy(&received_data).contains("\r\n\r\n") {
 
 
@@ -219,13 +219,23 @@ impl ConnectionSource {
 
 
 
-let mut headers = [httparse::EMPTY_HEADER; 100];
+let mut headers = [httparse::EMPTY_HEADER; 200];
 let mut req = httparse::Request::new(&mut headers);
 
-let res = req.parse(&received_data.as_slice()).expect("Expected headers, or less than 100 headers!");
+
+let res = match req.parse(&received_data.as_slice()) {//.expect("Expected headers, and less than 100 headers!");
+Ok(o) => o,
+Err(e) => {
+    error!(target: &self.server_token.0.to_string(),"Read http-parse error unknown: {:?}",e);
+    httparse::Status::Partial.into()
+    
+}
+        };
+
 if res.is_partial() {
     match req.path {
-        Some(ref path) => {
+//        Some(ref path) => {
+        Some(_) =>{
             // check router for path.
             // /404 doesn't exist? we could stop parsing
             
@@ -310,13 +320,14 @@ impl ConnectionSource {
         //            if self.send_to_client.is_none() && self.forward_stream.is_some() {
         let mut received_data = Vec::new();
         //Loop to read all incomming data
+        let now = Instant::now();
         loop {
             //TODO: check that the buffer is not to small or too big, wich is normal?
             let mut buf = [0; 1280];
             let res = self.forward_stream.as_mut().unwrap().read(&mut buf);
             trace!(target: &self.server_token.0.to_string(),"ForRead Checking read errors");
             //Send along to macro for errorhandling.
-            read_error_handling!(self, res, received_data, buf);
+            read_error_handling!(self, res, received_data, buf,now);
         }
 
         trace!(target: &self.server_token.0.to_string(),
