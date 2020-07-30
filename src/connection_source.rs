@@ -218,40 +218,24 @@ impl ConnectionSource {
 
 
 
+        //TODO should be a reusable struct maby.
+            let mut headers = [httparse::EMPTY_HEADER; 200];
+            let mut req = httparse::Request::new(&mut headers);
+            match req.parse(&received_data.as_slice()) {
+                Ok(o) => o,
+                Err(e) => {
+                    error!(target: &self.server_token.0.to_string(),"Read http-parse error unknown: {:?}",e);
+                    httparse::Status::Partial.into()
+                }
+            };
 
-let mut headers = [httparse::EMPTY_HEADER; 200];
-let mut req = httparse::Request::new(&mut headers);
 
-
-let res = match req.parse(&received_data.as_slice()) {//.expect("Expected headers, and less than 100 headers!");
-Ok(o) => o,
-Err(e) => {
-    error!(target: &self.server_token.0.to_string(),"Read http-parse error unknown: {:?}",e);
-    httparse::Status::Partial.into()
-    
-}
-        };
-
-if res.is_partial() {
-    match req.path {
-//        Some(ref path) => {
-        Some(_) =>{
-            // check router for path.
-            // /404 doesn't exist? we could stop parsing
-            
-        },
-        None => {
-            // must read more and parse again
-        }
-    }
-}
-
-//TODO is host always on index 0?
-self.request_host = format!("{}",String::from_utf8_lossy(req.headers[0].value));
-// error!("Host: {:?} ========================================================", req.headers.to_vec());
-// for h in req.headers {
-//     error!("Header --> {}: {}",h.name,String::from_utf8_lossy(h.value));
-// }
+            //TODO is host always on index 0?
+            self.request_host = format!("{}",String::from_utf8_lossy(req.headers[0].value));
+            // error!("Host: {:?} ========================================================", req.headers.to_vec());
+            for h in req.headers {
+                debug!("Header --> {}: {}",h.name,String::from_utf8_lossy(h.value));
+            }
 
 
 
