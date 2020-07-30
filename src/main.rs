@@ -45,7 +45,7 @@ use std::{time::Duration, fs::File};
 use dotenv;
 
 fn main() -> Result<(), Box<dyn Error>> {
-    dotenv::from_filename("improxy.env").ok();
+    dotenv::from_filename("improxy.env").unwrap_or_default();
 
     let mut logger: Vec<Box<dyn SharedLogger>> = Vec::new();
     if dotenv::var("TERM_LOG_LEVEL").is_ok() {
@@ -63,9 +63,10 @@ fn main() -> Result<(), Box<dyn Error>> {
         ));
     }
 
-    if dotenv::var("LOG_FILE_LEVEL").is_ok() && dotenv::var("LOG_FILE").is_ok() {
+    if dotenv::var("LOG_FILE_LEVEL").is_ok() && dotenv::var("LOG_DIR").is_ok() {
         let log_file_level: LevelFilter = dotenv::var("LOG_FILE_LEVEL").unwrap().parse().unwrap();
-        let log_file = dotenv::var("LOG_FILE").unwrap();
+        let log_file = dotenv::var("LOG_DIR").unwrap();
+        let log_file = format!("{}/{}",log_file,"improxy_main.log");
         logger.push(WriteLogger::new(
             log_file_level,
             Config::default(),

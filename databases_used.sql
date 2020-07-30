@@ -5,7 +5,7 @@ CREATE TABLE `cert_domainname` (
 	`ca_primary` ENUM('Y','N') NOT NULL DEFAULT 'N' COMMENT 'Primary used as certificate CA',
 	PRIMARY KEY (`id`)
 )
-COLLATE='utf8_swedish_ci';
+COLLATE='utf8mb4_swedish_ci';
 
 CREATE TABLE `certificate` (
 	`id` INT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT 'Auto inc keynumber',
@@ -15,4 +15,4 @@ CREATE TABLE `certificate` (
 	`active` ENUM('Y','N') NOT NULL DEFAULT 'N' COMMENT 'Is this cert active?',
 	PRIMARY KEY (`id`)
 )
-COLLATE='utf8_swedish_ci';
+COLLATE='utf8mb4_swedish_ci';
