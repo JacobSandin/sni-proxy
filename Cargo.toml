@@ -1,6 +1,6 @@
 [package]
 name = "improxy-js"
-version = "0.0.3"
+version = "0.0.5"
 edition = "2018"
 authors = ["Jacob Sandin jacob@js.se"]
 publish = false
