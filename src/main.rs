@@ -63,13 +63,15 @@ fn main() -> Result<(), Box<dyn Error>> {
         ));
     }
 
+    let mut c = Config::new();
+    
     if dotenv::var("LOG_FILE_LEVEL").is_ok() && dotenv::var("LOG_DIR").is_ok() {
         let log_file_level: LevelFilter = dotenv::var("LOG_FILE_LEVEL").unwrap().parse().unwrap();
         let log_file = dotenv::var("LOG_DIR").unwrap();
         let log_file = format!("{}/{}",log_file,"improxy_main.log");
         logger.push(WriteLogger::new(
             log_file_level,
-            Config::default(),
+             c, //Config::default(),
             File::create(log_file).unwrap(),
         ));
     } else {
