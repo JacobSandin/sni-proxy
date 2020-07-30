@@ -16,6 +16,7 @@ use std::{
     net,
     sync::Arc,
 };
+use httparse;
 
 use crate::{ok_macro, process_error_handling, read_error_handling, write_error_handling};
 
@@ -29,6 +30,7 @@ pub struct ConnectionSource {
     pub forward_lookup: Arc<HashMap<String, String>>,
     //TODO: Remove do_tls and use tls_session.is_some instead.
     pub do_tls: bool,
+    request_host: String,
 
     forward_stream: Option<TcpStream>,
     send_to_farward: VecDeque<Vec<u8>>,
@@ -115,14 +117,14 @@ impl Source for ConnectionSource {
         }
 
         let mut server_addr =String::new();
-        let mut sni_host="";
+//        let mut sni_host="";
         let mut server_port=0;
         if self.server_stream.peer_addr().is_ok() {
              server_addr = self.server_stream.peer_addr().unwrap().to_string()
         }
-        if self.tls_session.is_some() && self.tls_session.as_mut().unwrap().get_sni_hostname().is_some() {
-            sni_host = self.tls_session.as_mut().unwrap().get_sni_hostname().unwrap();
-        }
+        // if self.tls_session.is_some() && self.tls_session.as_mut().unwrap().get_sni_hostname().is_some() {
+        //     sni_host = self.tls_session.as_mut().unwrap().get_sni_hostname().unwrap();
+        // }
         if self.server_stream.local_addr().is_ok() {
             server_port = self.server_stream.local_addr().unwrap().port();
         }
@@ -130,7 +132,7 @@ impl Source for ConnectionSource {
         debug!(target: &self.server_token.0.to_string(),
                     "Connection  {} -> {}:{} => {}  to_client:{} from_client:{}",
                     server_addr, 
-                    sni_host, 
+                    self.request_host, 
                     server_port,
                     self.forward_host,
                     self.bytes_received,
@@ -160,6 +162,7 @@ impl ConnectionSource {
             send_to_client: VecDeque::new(),
             do_tls: tls_session.is_some(),
             tls_session: tls_session,
+            request_host: String::new(),
             closing: false,
             done_closing: false,
             server_reregistered: false,
@@ -210,6 +213,39 @@ impl ConnectionSource {
         self.bytes_sent += &received_data.as_slice().len();
 
         if String::from_utf8_lossy(&received_data).contains("\r\n\r\n") {
+
+
+
+
+
+
+let mut headers = [httparse::EMPTY_HEADER; 100];
+let mut req = httparse::Request::new(&mut headers);
+
+let res = req.parse(&received_data.as_slice()).expect("Expected headers, or less than 100 headers!");
+if res.is_partial() {
+    match req.path {
+        Some(ref path) => {
+            // check router for path.
+            // /404 doesn't exist? we could stop parsing
+            
+        },
+        None => {
+            // must read more and parse again
+        }
+    }
+}
+
+//TODO is host always on index 0?
+self.request_host = format!("{}",String::from_utf8_lossy(req.headers[0].value));
+// error!("Host: {:?} ========================================================", req.headers.to_vec());
+// for h in req.headers {
+//     error!("Header --> {}: {}",h.name,String::from_utf8_lossy(h.value));
+// }
+
+
+
+
             self.send_to_farward.push_back(received_data);
             //= Some(received_data);
             self.activate_forward_stream(registry);
@@ -338,24 +374,10 @@ impl ConnectionSource {
         //We need if the forward_stream exists or not. If it does not exist we need to create
         //it, else we need to reregister.
         if self.forward_stream.is_none() {
-            trace!(target: &self.server_token.0.to_string(),"Read starting forward stream.");
-            self.forward_stream = if self.tls_session.is_some()
-                && self
-                    .tls_session
-                    .as_mut()
-                    .unwrap()
-                    .get_sni_hostname()
-                    .is_some()
-            {
-                let sni_hostname = self
-                    .tls_session
-                    .as_ref()
-                    .unwrap()
-                    .get_sni_hostname()
-                    .unwrap();
-                let adress = self
+            self.forward_stream = if !self.request_host.is_empty() {
+                self.forward_host = self
                     .forward_lookup
-                    .get(sni_hostname)
+                    .get(&self.request_host)
                     .unwrap()
                     .parse()
                     .unwrap();
@@ -363,14 +385,16 @@ impl ConnectionSource {
                 info!(target: &self.server_token.0.to_string(),
                     "Connection established {} -> {}:{} => {}",
                     self.server_stream.peer_addr().unwrap().to_string(), 
-                    sni_hostname, 
+                    self.request_host, 
                     self.server_stream.local_addr().unwrap().port(),
-                    adress);
+                    self.forward_host);
 
-                Some(TcpStream::connect(adress).unwrap())
+                Some(TcpStream::connect(self.forward_host.parse().unwrap()).unwrap())
             } else {
+
                 //Anything else are assigned the following port and IP
                 error!(target: &self.server_token.0.to_string(),"Could not find forward adress!");
+                //TODO: fix, should either not be used or should be in config
                 Some(TcpStream::connect("192.168.96.54:80".parse().unwrap()).unwrap())
             };
 
@@ -655,6 +679,12 @@ impl ConnectionSource {
             let processed = self.tls_session.as_mut().unwrap().process_new_packets();
             //Use macro to do error handling.
             process_error_handling!(self, processed);
+
+            // Should not be needed, we should use the request Host: header
+            // if self.tls_session.is_some() && self.tls_session.unwrap().get_sni_hostname().is_some() {
+            //     self.request_host = String::from(self.tls_session.unwrap().get_sni_hostname().unwrap());
+            // }
+
         }
 
         /*
