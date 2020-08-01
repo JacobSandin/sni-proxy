@@ -1,5 +1,5 @@
 [package]
-name = "improxy-js"
+name = "sni-proxy"
 version = "0.0.5"
 edition = "2018"
 authors = ["Jacob Sandin jacob@js.se"]
@@ -12,17 +12,17 @@ logging = ["log"]
 
 [dependencies]
 mio = { version = "0.7", features = ["os-poll", "tcp"] }
-x509-parser = "0.8.0-beta4"
 regex = "1.3.9"
-rustls = { version = "0.18", features = [] }
 log = { version = "0.4.4", optional = true }#, features=["max_level_debug", "release_max_level_warn"] }
-simplelog = "0.8.0"
+simplelog = "0.7.3"
 httparse= {version="1.3.4", features = [ "std"] }
 mysql = "18.2.0"
 dotenv = "0.15.0"
 strfmt = "0.1.6"
 libloading = "0.6.2"
 interfaces = { path = "../interfaces", version = "*" }
+rustls = { version = "0.18", features = [] }
+x509-parser = "0.8.0-beta4"
 
 
 

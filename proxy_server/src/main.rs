@@ -9,6 +9,8 @@
     https://github.com/ctz/rustls/blob/master/rustls-mio/examples/tlsserver.rs
 
     TODO: Test https://github.com/nbaksalyar/rust-streaming-http-parser/
+
+    https://github.com/luojia65/plugin-system-example/blob/master/my-master/Cargo.toml
 */
 
 //#[macro_use]
@@ -17,7 +19,10 @@ mod connection_source;
 mod sni_resolver;
 #[macro_use]
 mod macros;
-mod cert_database;
+//mod cert_database;
+mod env_logger;
+
+//use cert_database::{get_all_certificates, MariaSNIResolver};
 
 use crate::connection_source::ConnectionSource;
 use crate::sni_resolver::{load_certs, load_private_key};
@@ -38,57 +43,26 @@ extern crate log;
 use log::{debug, error, info, trace, warn};
 
 extern crate simplelog;
-use cert_database::{get_all_certificates, MariaSNIResolver};
-use simplelog::*;
-use std::{time::Duration, fs::File};
+use std::time::Duration;
 
 use dotenv;
+use env_logger::activate_env_logger;
+use interfaces::CertificateHandler;
 
 fn main() -> Result<(), Box<dyn Error>> {
-    dotenv::from_filename("improxy.env").unwrap_or_default();
+    activate_env_logger();
+    info!("Start;");
+    run()
+    //Ok(())
+}
 
-    let log_config=ConfigBuilder::new()
-    .set_time_format_str("%Y-%m-%d %T")
-    .set_target_level(LevelFilter::Info)
-    .set_time_to_local(true)
-    .build();
-
-    let mut logger: Vec<Box<dyn SharedLogger>> = Vec::new();
-    if dotenv::var("TERM_LOG_LEVEL").is_ok() {
-        let term_log_level: LevelFilter = dotenv::var("TERM_LOG_LEVEL").unwrap().parse().unwrap();
-        logger.push(TermLogger::new(
-            term_log_level,
-            log_config.clone(),
-            TerminalMode::Mixed,
-        ));
-    } else {
-        logger.push(TermLogger::new(
-            LevelFilter::Debug,
-            log_config.clone(),
-            TerminalMode::Mixed,
-        ));
-    }
-
-
-    
-    if dotenv::var("LOG_FILE_LEVEL").is_ok() && dotenv::var("LOG_DIR").is_ok() {
-        let log_file_level: LevelFilter = dotenv::var("LOG_FILE_LEVEL").unwrap().parse().unwrap();
-        let log_file = dotenv::var("LOG_DIR").unwrap();
-        let log_file = format!("{}/{}",log_file,"improxy_main.log");
-        logger.push(WriteLogger::new(
-            log_file_level.clone(),
-            log_config,
-            File::create(log_file).unwrap(),
-        ));
-    } else {
-        logger.push(WriteLogger::new(
-            LevelFilter::Trace,
-            log_config.clone(),
-            File::create("../trace.log").unwrap(),
-        ));
-    }
-    CombinedLogger::init(logger).unwrap();
-    trace!(target: "0","Log started!");
+#[allow(dead_code)]
+fn run() -> Result<(), Box<dyn Error>> {
+    let lib =
+        libloading::Library::new("target/debug/cert_plugin_mariadb.dll").expect("load library");
+    let get_certificate_handler: libloading::Symbol<fn() -> Box<dyn CertificateHandler>> =
+        unsafe { lib.get(b"get_certificate_handler") }.expect("load symbol");
+    let ch = get_certificate_handler();
 
     trace!(target: "0","Poll creating new");
     let mut poll = Poll::new()?;
@@ -100,43 +74,21 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut connections: HashMap<Token, RefCell<ConnectionSource>> = HashMap::new();
     let mut forward_connections: HashMap<Token, RefCell<Token>> = HashMap::new();
 
-    // Import certificates and create a forwards hashmap.
-    trace!(target: "0","Load forwards from database");
-    let import_certificates = get_all_certificates();
-    let mut forwards: HashMap<String, String> = HashMap::new();
-    for cert in import_certificates
-        .iter()
-        .filter(|c| !c.forward.contains("127"))
-    {
-        if cert.domain_names.is_some() {
-            for dn in cert.domain_names.as_ref().unwrap() {
-                if None == forwards.insert(String::from(&dn.dn), String::from(&cert.forward)) {
-                    //Hosts println!("127.0.0.1   {0}  # {0}  => {1}",dn.dn,cert.forward);
-                }
-            }
-        }
-    }
-    //Debug if anyone is listening.
-    //TODO we might actually shoul only do this if any debug is on
-    for (f, w) in forwards.iter() {
-        //        println!("127.0.0.1   {0}  # {0}  => {1}",f,w);
-        info!(target: "0","forward mapped {}  => {}",f,w);
-    }
-
     //Create an arc of the forwards
-    let forwards: Arc<HashMap<String, String>> = Arc::from(forwards);
+    let forwards = ch.get_forwards();
+
+    //let forwards: Arc<&mut HashMap<String, String>> = Arc::new(forwards);// Arc::from(forwards);
 
     debug!(target: "0","Crating unique Token with first number of 2, 0=HTTPS_SERVER 1=HTTP_SERVER");
     let mut unique_token = Token(2);
 
-
-    let mut http_bind=String::from("0.0.0.0:80");
+    let mut http_bind = String::from("0.0.0.0:80");
     if dotenv::var("HTTP").is_ok() {
-        http_bind= dotenv::var("HTTP").unwrap();
+        http_bind = dotenv::var("HTTP").unwrap();
     }
-    let mut https_bind=String::from("0.0.0.0:443");
+    let mut https_bind = String::from("0.0.0.0:443");
     if dotenv::var("HTTPS").is_ok() {
-        https_bind= dotenv::var("HTTPS").unwrap();
+        https_bind = dotenv::var("HTTPS").unwrap();
     }
 
     info!(target: "0","Starting HTTPS_SERVER bind({})",https_bind);
@@ -157,15 +109,9 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut config = rustls::ServerConfig::new(NoClientAuth::new());
 
     if SNI_TLS_CERTS {
-        trace!(target: "0","Loading mariadb resolver");
-        let mut resolver = MariaSNIResolver::new();
-        resolver.populate(&import_certificates);
-
-        //trace!(target: "0","Loading resolver");
-        //let resolver = load_resolver();
-
-        trace!(target: "0","Adding cert resolver to config");
-        config.cert_resolver = std::sync::Arc::new(resolver);
+        trace!(target: "0","Loading resolver");
+        let a = ch.get_sni_resolver().as_ref().clone();
+        config.cert_resolver = a;
     } else {
         //TODO: Single cert in config
         trace!(target: "0","Load certificate for single cert server");
@@ -181,13 +127,13 @@ fn main() -> Result<(), Box<dyn Error>> {
             })
             .unwrap();
     }
+
     trace!(target: "0","Adding protocolls to tls config http/https(1.1,1.2)");
     config.set_protocols(&[b"http/1.2".to_vec(), b"http/1.1".to_vec()]);
 
     info!(target: "0","Spinning up servers");
     loop {
-
-//        poll.poll(&mut events, None)?;
+        //        poll.poll(&mut events, None)?;
         poll.poll(&mut events, Some(Duration::from_millis(500)))?;
 
         for event in events.iter() {
@@ -199,7 +145,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                         &mut unique_token,
                         &mut connections,
                         &mut forward_connections,
-                        &forwards,
+                        &mut forwards.as_ref(),
                         &mut poll,
                         &mut config,
                         false,
@@ -212,7 +158,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                         &mut unique_token,
                         &mut connections,
                         &mut forward_connections,
-                        &forwards,
+                        &mut forwards.as_ref(),
                         &mut poll,
                         &mut config,
                         true,
@@ -287,7 +233,9 @@ fn do_server_accept(
         let forward_token = Token(unique_token.0 - 1);
         trace!(
             "{} accepted connection from: {} adding token {}",
-            https_or_http, address, server_token.0
+            https_or_http,
+            address,
+            server_token.0
         );
 
         let tls_session: Option<rustls::ServerSession> = if tls {

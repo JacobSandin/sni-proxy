@@ -1,4 +1,3 @@
-
 //Handles write errors for a socket stream.
 #[macro_export]
 macro_rules! write_error_handling {
@@ -29,7 +28,7 @@ macro_rules! write_error_handling {
 macro_rules! read_error_handling {
     // This form normal socket errors and bellow is tls
     ($self:ident, $ret:ident, $receiver:ident, $buf:ident,$wb:ident) => {
-        
+
                 match $ret {
                     Ok(0) => {
                         trace!(target: &$self.server_token.0.to_string(),"MACRO Read reading zero closing:({})", $self.closing);
@@ -43,6 +42,7 @@ macro_rules! read_error_handling {
                     Err(e)if e.kind() == io::ErrorKind::WouldBlock => {
                         trace!(target: &$self.server_token.0.to_string(),"MACRO Read Would block\r\n{:?}",e);
                         //TODO: Add a collector from client instead... so we dont halt the MIO loop or implement threading/async
+                        //break;
                         if $wb.elapsed().as_millis() > 20 {
                             break;
                         }
@@ -120,7 +120,7 @@ macro_rules! ok_macro {
                 Err(e) =>
                 {
                     error!(target: &$self.server_token.0.to_string(),"MACRO ok_macro returning Error:\r\n: {:?}",e);
-                    return Some(false);
+                   // return Some(false);
                 },
             }
     };
