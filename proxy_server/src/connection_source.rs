@@ -177,7 +177,6 @@ impl ConnectionSource {
     }
 }
 
-
 // HTTP
 impl ConnectionSource {
     fn https_reader(&mut self) -> bool {
@@ -185,7 +184,7 @@ impl ConnectionSource {
         debug!("Entering HTTPS_READER");
         loop {
             let mut buf = [0; 256];
-            
+
             match self.tls_session.as_mut().unwrap().read(&mut buf) {
                 Ok(0) => {
                     debug!(target: &self.server_token.0.to_string(),"https_reader read 0");
@@ -193,7 +192,7 @@ impl ConnectionSource {
                 }
                 Ok(n) => {
                     self.activity_timeout = None;
-                    let u:usize = n.to_string().parse().unwrap();
+                    let u: usize = n.to_string().parse().unwrap();
                     self.bytes_sent = self.bytes_sent + n;
                     self.buf_forward.extend_from_slice(&buf[0..u]);
                     debug!(target: &self.server_token.0.to_string(),"https_reader read {}",n);
@@ -206,7 +205,7 @@ impl ConnectionSource {
                 //Looks to be what registers when finished reading.
                 Err(e) if e.kind() == io::ErrorKind::WouldBlock => {
                     debug!(target: &self.server_token.0.to_string(),"https_reader Would block\r\n{:?}",e);
-                    if self.buf_forward.len()>0 {
+                    if self.buf_forward.len() > 0 {
                         //self.activity_timeout= Instant::now();
                         return true;
                     }
@@ -219,18 +218,20 @@ impl ConnectionSource {
                 Err(e) => {
                     error!(target: &self.server_token.0.to_string(),"https_reader Unknown error: \r\n{:?}",e);
                     return false;
-      
                 }
             }
         }
-      
     }
 
     fn https_writer(&mut self) -> Option<bool> {
         while self.send_to_client.len() > 0 {
             let buf = self.send_to_client.pop_front();
             let len = &buf.clone().unwrap().len();
-            let res = self.tls_session.as_mut().unwrap().write_all(&buf.unwrap().as_mut_slice());
+            let res = self
+                .tls_session
+                .as_mut()
+                .unwrap()
+                .write_all(&buf.unwrap().as_mut_slice());
             match res {
                 Ok(()) => {
                     //self.activity_timeout= Instant::now();
@@ -252,10 +253,11 @@ impl ConnectionSource {
         loop {
             let mut buf = [0; 2048];
             match self.server_stream.read(&mut buf) {
-                Ok(0) => {
-                    debug!(target: &self.server_token.0.to_string(),"http_reader read 0");
-                    return true;
-                }
+                // https://tokio.rs/blog/2019-12-mio-v0.7-alpha.1
+                // Ok(0) => {
+                //     debug!(target: &self.server_token.0.to_string(),"http_reader read 0");
+                //     return true;
+                // }
                 Ok(n) => {
                     self.activity_timeout = None;
                     self.bytes_sent = self.bytes_sent + n;
@@ -263,19 +265,18 @@ impl ConnectionSource {
                     debug!(target: &self.server_token.0.to_string(),"http_reader read {}",n);
                     if n < 2048 {
                         //self.activity_timeout= Instant::now();
-                       return true;
+                        return true;
                     }
                     //return None;
                 }
                 //Looks to be what registers when finished reading.
                 Err(e) if e.kind() == io::ErrorKind::WouldBlock => {
                     debug!(target: &self.server_token.0.to_string(),"http_reader Would block\r\n{:?}",e);
-                    if self.buf_forward.len()>0 {
+                    if self.buf_forward.len() > 0 {
                         //self.activity_timeout= Instant::now();
                         return true;
                     }
                     return false;
-                   
                 }
                 Err(e) if e.kind() == io::ErrorKind::Interrupted => {
                     debug!(target: &self.server_token.0.to_string(),"http_reader Interupted\r\n{:?}",e);
@@ -287,7 +288,6 @@ impl ConnectionSource {
                 }
             }
         }
-
     }
 
     fn http_writer(&mut self) -> Option<bool> {
@@ -311,33 +311,33 @@ impl ConnectionSource {
         Some(true)
     }
 
-    fn http_fwd_reader(&mut self) ->bool {
+    fn http_fwd_reader(&mut self) -> bool {
         //let mut received_data: Vec<u8> = Vec::new();
         loop {
             let mut buf = [0; 4096];
             match self.forward_stream.as_mut().unwrap().read(&mut buf) {
-                Ok(0) => {
-                    debug!(target: &self.server_token.0.to_string(),"http_fwd_reader read 0");
-                    return true;
-                }
+                // https://tokio.rs/blog/2019-12-mio-v0.7-alpha.1
+                // Ok(0) => {
+                //     debug!(target: &self.server_token.0.to_string(),"http_fwd_reader read 0");
+                //     return true;
+                // }
                 Ok(n) => {
                     self.buf_client.extend_from_slice(&buf[0..n]);
                     debug!(target: &self.server_token.0.to_string(),"http_fwd_reader read {}",n);
                     if n < 4096 {
                         //self.activity_timeout= Instant::now();
-                       return true;
+                        return true;
                     }
                     //return None;
                 }
                 //Looks to be what registers when finished reading.
                 Err(e) if e.kind() == io::ErrorKind::WouldBlock => {
                     debug!(target: &self.server_token.0.to_string(),"http_fwd_reader Would block\r\n{:?}",e);
-                    if self.buf_client.len()>0 {
+                    if self.buf_client.len() > 0 {
                         //self.activity_timeout= Instant::now();
                         return true;
                     }
                     return false;
-                    
                 }
                 Err(e) if e.kind() == io::ErrorKind::Interrupted => {
                     debug!(target: &self.server_token.0.to_string(),"http_fwd_reader Interupted\r\n{:?}",e);
@@ -346,7 +346,6 @@ impl ConnectionSource {
                 Err(e) => {
                     error!(target: &self.server_token.0.to_string(),"http_fwd_reader Unknown error: \r\n{:?}",e);
                     return false;
-                    
                 }
             }
         }
@@ -356,10 +355,14 @@ impl ConnectionSource {
         while self.send_to_farward.len() > 0 {
             let buf = self.send_to_farward.pop_front();
             debug!(target: &self.server_token.0.to_string(),"http_fwd_writer data: {}",String::from_utf8_lossy(&buf.clone().unwrap().as_slice()));
-            let res = self.forward_stream.as_mut().unwrap().write_all(&buf.unwrap().as_mut_slice());
+            let res = self
+                .forward_stream
+                .as_mut()
+                .unwrap()
+                .write_all(&buf.unwrap().as_mut_slice());
             match res {
                 Ok(()) => {
-                    //self.activity_timeout= Instant::now();                   
+                    //self.activity_timeout= Instant::now();
                     return Some(true);
                 }
                 Err(e) => {
@@ -371,10 +374,9 @@ impl ConnectionSource {
         Some(true)
     }
 
-
-    fn set_forward_adress(&mut self) -> bool{
+    fn set_forward_adress(&mut self) -> bool {
         if String::from_utf8_lossy(&self.buf_forward.as_slice()).contains("\r\n\r\n") {
-            debug!("{}",String::from_utf8_lossy(&self.buf_forward.as_slice()));
+            debug!("{}", String::from_utf8_lossy(&self.buf_forward.as_slice()));
             //TODO should be a reusable struct maby.
             let mut headers = [httparse::EMPTY_HEADER; 200];
             let mut req = httparse::Request::new(&mut headers);
@@ -383,12 +385,11 @@ impl ConnectionSource {
                 Ok(_) => (),
                 Err(e) => {
                     error!(target: &self.server_token.0.to_string(),"Read http-parse error unknown: {:?}",e);
-                   // httparse::Status::Partial.into()
+                    // httparse::Status::Partial.into()
                     return false;
-                //()
+                    //()
                 }
             };
-
 
             //TODO is host always on index 0?
             self.request_host = format!("{}", String::from_utf8_lossy(req.headers[0].value));
@@ -397,7 +398,7 @@ impl ConnectionSource {
             for h in req.headers {
                 debug!(target: &self.server_token.0.to_string(),"Header --> {}: {}",h.name,String::from_utf8_lossy(h.value));
             }
-           return true;
+            return true;
         }
         true
     }
@@ -494,15 +495,27 @@ impl ConnectionSource {
                 self.forward_host = self
                     .forward_lookup
                     .get(&self.request_host)
-                    .unwrap_or(&String::from("192.168.96.54:80"))
+                    .unwrap_or(
+                        &dotenv::var("DEFAULT_FORWARD").unwrap_or(String::from("")),
+                    )
+                    //                    .unwrap_or(&String::from("192.168.96.54:80"))
                     .parse()
                     .expect("what2");
 
                 info!(target: &self.server_token.0.to_string(),
                     "Connection established {} -> {}:{} => {}",
-                    self.server_stream.peer_addr().unwrap().to_string(), self.request_host, self.server_stream.local_addr().unwrap().port(),self.forward_host);
+                    self.server_stream.peer_addr().expect("Peer_Addr").to_string(),
+                      self.request_host, self.server_stream.local_addr().expect("ServerStream").port(),self.forward_host);
 
-                Some(TcpStream::connect(self.forward_host.parse().unwrap()).unwrap())
+                    let socket: Result<std::net::SocketAddr,_> = self.forward_host.parse();
+                if socket.is_ok() {
+                        Some(TcpStream::connect(socket.unwrap()).unwrap())
+                } else {
+                    self.closing = true;
+                    error!(target: &self.server_token.0.to_string(),"We have no forwarding adress for {}",&self.request_host);
+                    None
+                }  
+                
             } else {
                 //Anything else are assigned the following port and IP
                 error!(target: &self.server_token.0.to_string(),"Could not find forward adress return with false!");
@@ -532,7 +545,6 @@ impl ConnectionSource {
         //     "Read Confirming send_to_forward has data:\r\n{}",
         //     String::from_utf8_lossy(&self.send_to_farward.as_mut().unwrap()[..min(len, 1024)])
         // );
-        
     }
 }
 
@@ -556,12 +568,26 @@ impl ConnectionSource {
         event: &Event,
         token: Token,
     ) -> Option<bool> {
+
+
+        // if token == self.server_token {
+        //     self.server_stream.deregister(registry).expect("Expected to deregister server thread on entry!");
+        // }
+
+        // if token == self.forward_token && self.forward_stream.is_some() {
+        //     self.forward_stream.as_mut().unwrap().deregister(registry).expect("Expected to deregister server thread on entry!");
+        // }
+
         // Too much trace!(target: &self.server_token.0.to_string(),"Main incomming Event: \r\n{:?}",event);
         //TODO set config for connection timout
-        if self.activity_timeout.is_some() &&  self.activity_timeout.unwrap().elapsed().as_millis() > 100 {
+        if self.activity_timeout.is_some()
+            && self.activity_timeout.unwrap().elapsed().as_millis() > 100
+        {
             self.closing = true;
         }
 
+
+        
         //Success is used to check if thefunctions called have succeeded or not, we might
         // in the future decide closing depending on this, we will have too see.
         // And for logging to see where the code fails depending on where this changes.
@@ -571,19 +597,23 @@ impl ConnectionSource {
         let mut forward = token == self.forward_token && self.forward_stream.is_some();
 
         //if fwd_ok_r is true We are ok to read the forward stream.
-        let fwd_ok_r = forward && event.is_readable() && self.forward_stream.is_some() && self.do_tls;
+        let fwd_ok_r =
+            forward && event.is_readable() && self.forward_stream.is_some() && self.do_tls;
         //if fwd_ok_w is true We are ok to write the forward stream.
         let fwd_ok_w = forward
             && event.is_writable()
             && self.forward_stream.is_some()
-            && self.send_to_farward.len() > 0 && self.do_tls;
+            && self.send_to_farward.len() > 0
+            && self.do_tls;
 
-        let http_fwd_ok_r = forward && event.is_readable() && self.forward_stream.is_some() && !self.do_tls;
+        let http_fwd_ok_r =
+            forward && event.is_readable() && self.forward_stream.is_some() && !self.do_tls;
 
         let http_fwd_ok_w = forward
             && event.is_writable()
             && self.forward_stream.is_some()
-            && self.send_to_farward.len() > 0 && !self.do_tls;
+            && self.send_to_farward.len() > 0
+            && !self.do_tls;
         //if tls_ok_r is true we have tls and we are ok to read the tls_session
         let tls_ok_r = event.is_readable() && !forward && self.do_tls;
 
@@ -601,7 +631,7 @@ impl ConnectionSource {
 
         let http_ok_r = event.is_readable() && !self.do_tls;
         //if fwd_ok_w is true we are ok to write to the client via server_stream
-        let http_ok_w = event.is_writable() && !self.do_tls && self.send_to_client.len()>0;
+        let http_ok_w = event.is_writable() && !self.do_tls && self.send_to_client.len() > 0;
 
         // Workaround for not finding a way to get tls to work in MIO ekosystem statemachine environment,
         // and seem to need read write on for the socket all the time.
@@ -825,14 +855,15 @@ impl ConnectionSource {
         if cli_ok_r {
             trace!(target: &self.server_token.0.to_string(),"Entering CLI_R ({})", success);
             if self.https_reader() {
-                    //Finished
+                //Finished
                 if self.set_forward_adress() {
                     &self.send_to_farward.push_back(self.buf_forward.clone());
                     &self.buf_forward.clear();
                     self.activate_forward_stream(registry);
                 }
-                
-            } else {success=false;}
+            } else {
+                success = false;
+            }
             trace!(target: &self.server_token.0.to_string(),"Exiting CLI_R ({})", success);
         }
 
@@ -855,11 +886,11 @@ impl ConnectionSource {
             ok_macro!(
                 self,
                 self.reregister(
-                        registry,
+                    registry,
                     self.forward_token,
                     Interest::READABLE | Interest::WRITABLE
-            )
-        );             
+                )
+            );
             debug!(target: &self.server_token.0.to_string(),"Exit HTTP_FWD_W ({})", success);
         }
 
@@ -868,16 +899,18 @@ impl ConnectionSource {
             if self.http_fwd_reader() {
                 &self.send_to_client.push_back(self.buf_client.clone());
                 &self.buf_client.clear();
-            } else {success=false;}
-                ok_macro!(
-                    self,
-                    self.reregister(
-                        registry,
-                        self.forward_token,
-                        Interest::READABLE | Interest::WRITABLE
-                    )
-                );             
-             debug!(target: &self.server_token.0.to_string(),"Exit HTTP_FWD_R ({})", success);
+            } else {
+                success = false;
+            }
+            ok_macro!(
+                self,
+                self.reregister(
+                    registry,
+                    self.forward_token,
+                    Interest::READABLE | Interest::WRITABLE
+                )
+            );
+            debug!(target: &self.server_token.0.to_string(),"Exit HTTP_FWD_R ({})", success);
         }
 
         if http_ok_r {
@@ -889,8 +922,10 @@ impl ConnectionSource {
                     self.activate_forward_stream(registry);
                 }
 
-                    debug!(target: &self.server_token.0.to_string(),"HTTP_R finished reading http");
-            } else {success=false;}
+                debug!(target: &self.server_token.0.to_string(),"HTTP_R finished reading http");
+            } else {
+                success = false;
+            }
 
             debug!(target: &self.server_token.0.to_string(),"Exiting HTTP_R ({})", success);
         }
@@ -925,10 +960,9 @@ impl ConnectionSource {
         //IF we have a server_stream not being registered during this cycle we need to reregister
         //it or it will not be called again, and die the slow death.
         //TODO: We probably need errorhandling here.
-        if self.send_to_farward.len()>0 {
+        if self.send_to_farward.len() > 0 {
             //debug!(target: &self.server_token.0.to_string(),"Forward Registering READ.");
             //self.activate_forward_stream(registry);
-
         }
 
         if token == self.server_token && !self.server_reregistered {
@@ -983,8 +1017,11 @@ impl ConnectionSource {
                 .as_mut()
                 .unwrap()
                 .shutdown(net::Shutdown::Both);
+            drop(self.forward_stream.as_ref().unwrap());
         }
 
+        
+            drop(&self.server_stream);
         // Deregister server_stream and forward_stream if it exists
         ok_macro!(self, self.deregister(registry));
         trace!(target: &self.server_token.0.to_string(),"Exit: close_all closing connections");

@@ -11,12 +11,18 @@
     TODO: Test https://github.com/nbaksalyar/rust-streaming-http-parser/
 
     https://github.com/luojia65/plugin-system-example/blob/master/my-master/Cargo.toml
+
+
+    Green threads for mio https://docs.rs/crate/mioco/0.8.1 https://github.com/dpc/mioco
+
+    https://crates.io/crates/greenie for rust
+
 */
 
 //#[macro_use]
 // extern crate mysql;
 mod connection_source;
-mod sni_resolver;
+mod load_single_cert;
 #[macro_use]
 mod macros;
 //mod cert_database;
@@ -25,7 +31,7 @@ mod env_logger;
 //use cert_database::{get_all_certificates, MariaSNIResolver};
 
 use crate::connection_source::ConnectionSource;
-use crate::sni_resolver::{load_certs, load_private_key};
+use crate::load_single_cert::{load_certs, load_private_key};
 
 use std::{cell::RefCell, collections::HashMap, error::Error, io, sync::Arc};
 
@@ -35,7 +41,6 @@ use rustls::{self, NoClientAuth};
 
 const HTTPS_SERVER: Token = Token(0);
 const HTTP_SERVER: Token = Token(1);
-const SNI_TLS_CERTS: bool = true;
 
 #[macro_use]
 extern crate log;
@@ -58,15 +63,29 @@ fn main() -> Result<(), Box<dyn Error>> {
 
 #[allow(dead_code)]
 fn run() -> Result<(), Box<dyn Error>> {
-    let lib =
-        libloading::Library::new("target/debug/cert_plugin_mariadb.dll").expect("load library");
-    let get_certificate_handler: libloading::Symbol<fn() -> Box<dyn CertificateHandler>> =
-        unsafe { lib.get(b"get_certificate_handler") }.expect("load symbol");
-    let ch = get_certificate_handler();
+    let lib = match libloading::Library::new(
+        dotenv::var("SNI_CERT_AND_FORWARDING_PLUGIN").unwrap_or(String::from("")),
+    ) {
+        Ok(a) => Some(a),
+        Err(e) => {
+            info!(target: "0","No certificate plugin to load! Error: \r\n {:?}",e);
+            debug!(target: "0","Error: \r\n {:?}",e);
+            None
+        }
+    };
+    let ch: Option<Box<dyn CertificateHandler>> = if lib.is_some() {
+        let get_certificate_handler: libloading::Symbol<fn() -> Box<dyn CertificateHandler>> =
+            unsafe { lib.as_ref().unwrap().get(b"get_certificate_handler") }.expect("load symbol");
+        let ch = get_certificate_handler();
+        Some(ch)
+    //Create an arc of the forwards
+    } else {
+        None
+    };
 
     trace!(target: "0","Poll creating new");
     let mut poll = Poll::new()?;
-
+    
     trace!(target: "0","Events capacity 128");
     let mut events = Events::with_capacity(16192);
 
@@ -75,9 +94,13 @@ fn run() -> Result<(), Box<dyn Error>> {
     let mut forward_connections: HashMap<Token, RefCell<Token>> = HashMap::new();
 
     //Create an arc of the forwards
-    let forwards = ch.get_forwards();
+    let forwards: Box<Arc<HashMap<String, String>>> = if ch.is_some() {
+        ch.as_ref().unwrap().get_forwards().clone()
+    } else {
+        Box::new(Arc::new(HashMap::new()))
+    };
 
-    //let forwards: Arc<&mut HashMap<String, String>> = Arc::new(forwards);// Arc::from(forwards);
+    //let forwards: Arc<&mut HashMap<String, String>> = if Arc::new(forwards);// Arc::from(forwards);
 
     debug!(target: "0","Crating unique Token with first number of 2, 0=HTTPS_SERVER 1=HTTP_SERVER");
     let mut unique_token = Token(2);
@@ -107,17 +130,34 @@ fn run() -> Result<(), Box<dyn Error>> {
 
     trace!(target: "0","Creating tls config");
     let mut config = rustls::ServerConfig::new(NoClientAuth::new());
+    let do_single_cert_as_default: bool = dotenv::var("DO_SINGLE_CERT_AS_DEFAULT")
+        .unwrap_or(String::from("false"))
+        .parse()
+        .unwrap_or(false);
 
-    if SNI_TLS_CERTS {
+    // for (k,v) in dotenv::vars() {
+    //     debug!("{} = {}",k,v);
+    // }
+
+    let test = dotenv::var(&"CERT_KEY_FILE").unwrap_or(String::from("none"));
+
+    debug!(target: "0","Certification used: {} -- {} -- {}",do_single_cert_as_default,test,dotenv::var(&"CERT_CHAIN_FILE").unwrap_or(String::from("none")));
+
+    if !do_single_cert_as_default {
         trace!(target: "0","Loading resolver");
-        let a = ch.get_sni_resolver().as_ref().clone();
-        config.cert_resolver = a;
+        let resolver = ch.unwrap().get_sni_resolver().as_ref().clone();
+        config.cert_resolver = resolver;
     } else {
         //TODO: Single cert in config
         trace!(target: "0","Load certificate for single cert server");
-        let certs = load_certs("../certificates/icm.prod.imcode.com/fullchain.pem");
+        //forwards.push(String::from("_default_"),String::new(""));
+
+        let certs =
+            load_certs(&dotenv::var("CERT_CHAIN_FILE").expect("Cant open certificate cert-file!"));
         trace!(target: "0","Load cert key for single cert server");
-        let privkey = load_private_key("../certificates/icm.prod.imcode.com/privkey.pem");
+        let privkey = load_private_key(
+            &dotenv::var("CERT_KEY_FILE").expect("Cant open certificate key-file!"),
+        );
         trace!(target: "0","Adding single cert to tls config");
         config
             .set_single_cert(certs, privkey)

@@ -7,7 +7,7 @@ use std::fs::{self, File};
 use std::io::BufReader;
 use std::sync::Arc;
 
-#[allow(dead_code)] //We leve it for others
+
 pub fn load_resolver() -> MyResolvesServerCertUsingSNI {
     let mut resolver = MyResolvesServerCertUsingSNI::new();
     add_certificate_to_resolver(
@@ -24,12 +24,12 @@ pub fn load_resolver() -> MyResolvesServerCertUsingSNI {
     resolver
 }
 
-#[allow(dead_code)]
+
 pub struct MyResolvesServerCertUsingSNI {
     by_name: collections::HashMap<String, sign::CertifiedKey>,
 }
 
-#[allow(dead_code)]
+
 impl MyResolvesServerCertUsingSNI {
     pub fn new() -> MyResolvesServerCertUsingSNI {
         MyResolvesServerCertUsingSNI {
@@ -81,7 +81,7 @@ impl ResolvesServerCert for MyResolvesServerCertUsingSNI {
     }
 }
 
-#[allow(dead_code)]
+
 pub fn add_certificate_to_resolver<'a>(
     name: &str,
     hostname: &str,
@@ -144,15 +144,13 @@ pub fn add_certificate_to_resolver<'a>(
     }
 }
 
-// For loading certs in a single cert setup
 
-//#[allow(dead_code)]
 pub fn load_certs(filename: &str) -> Vec<rustls::Certificate> {
     let certfile = fs::File::open(filename).expect("cannot open certificate file");
     let mut reader = BufReader::new(certfile);
     rustls::internal::pemfile::certs(&mut reader).unwrap()
 }
-//#[allow(dead_code)]
+
 pub fn load_private_key(filename: &str) -> rustls::PrivateKey {
     let rsa_keys = {
         let keyfile = fs::File::open(filename).expect("cannot open private key file");

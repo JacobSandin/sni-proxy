@@ -1,4 +1,5 @@
 use logg::{trace, LevelFilter};
+
 use simplelog::{
     CombinedLogger, ConfigBuilder, SharedLogger, TermLogger, TerminalMode, WriteLogger,
 };

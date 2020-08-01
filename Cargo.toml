@@ -2,7 +2,6 @@
 members = [
     "proxy_server",
     "interfaces",
-    "cert_plugin_single",
     "cert_plugin_sni_files",
     "cert_plugin_sni_mariadb",
 ]
