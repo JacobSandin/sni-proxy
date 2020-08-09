@@ -6,22 +6,27 @@ use std::collections;
 use std::fs::{self, File};
 use std::io::BufReader;
 use std::sync::Arc;
+use logg::{debug, error, info, trace, warn};
+use std::{collections::HashMap};
 
 
-pub fn load_resolver() -> MyResolvesServerCertUsingSNI {
+pub fn load_resolver() -> (MyResolvesServerCertUsingSNI, HashMap<String,String>) {
+    let mut forwards:HashMap<String,String> = HashMap::new();
     let mut resolver = MyResolvesServerCertUsingSNI::new();
     add_certificate_to_resolver(
         "partof-path.domain.name.com",
         "domain.name.com",
         &mut resolver,
+        &mut forwards,
     );
     add_certificate_to_resolver(
         "partof-path.other.domain.name.com",
         "other-domain.name.com",
         &mut resolver,
+        &mut forwards,
     );
     //add_certificate_to_resolver("_default_", "localhost", &mut resolver);
-    resolver
+    (resolver, forwards)
 }
 
 
@@ -86,6 +91,7 @@ pub fn add_certificate_to_resolver<'a>(
     name: &str,
     hostname: &str,
     resolver: &mut MyResolvesServerCertUsingSNI,
+    forwards: &mut HashMap<String,String>,
 ) {
     let cert_file = File::open(format!("../certificates/{}/fullchain.pem", name));
     if cert_file.is_err() {
@@ -109,6 +115,7 @@ pub fn add_certificate_to_resolver<'a>(
     println!("NamesHost: {}", hostname);
     for cap in re.captures_iter(text.as_str()) {
         names_vec.push((&cap[1]).to_string());
+
         println!("regex {}", &cap[1]);
     }
 

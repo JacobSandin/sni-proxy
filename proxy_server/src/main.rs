@@ -23,6 +23,8 @@
 // extern crate mysql;
 mod connection_source;
 mod load_single_cert;
+mod cache_test;
+mod http_parser;
 #[macro_use]
 mod macros;
 //mod cert_database;
@@ -48,7 +50,7 @@ extern crate log;
 use log::{debug, error, info, trace, warn};
 
 extern crate simplelog;
-use std::time::Duration;
+
 
 use dotenv;
 use env_logger::activate_env_logger;
@@ -173,8 +175,9 @@ fn run() -> Result<(), Box<dyn Error>> {
 
     info!(target: "0","Spinning up servers");
     loop {
-        //        poll.poll(&mut events, None)?;
-        poll.poll(&mut events, Some(Duration::from_millis(500)))?;
+        //info!(target: "0","Polling");
+        poll.poll(&mut events, None)?;
+        //poll.poll(&mut events, Some(Duration::from_millis(500)))?;
 
         for event in events.iter() {
             match event.token() {
@@ -221,7 +224,7 @@ fn run() -> Result<(), Box<dyn Error>> {
                         my_session
                             .borrow_mut()
                             .handle_connection_event(poll.registry(), event, token)
-                            .expect("WTF!!!!!!!!!")
+                            .expect("Expecting to handle connection in main")
                     } else {
                         false
                     };

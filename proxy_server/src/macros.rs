@@ -55,7 +55,7 @@ macro_rules! read_error_handling {
                     Err(e) => {
                         error!(target: &$self.server_token.0.to_string(),"MACRO Read Unknown error : {:?}", e);
                         $self.closing = true;
-                        return Some(false);
+                        return false;
                     },
                 }
     };
@@ -77,6 +77,27 @@ macro_rules! read_error_handling {
                 }
             }
     };
+}
+
+#[macro_export]
+macro_rules! req {
+    ($name:ident, $buf:expr, |$arg:ident| $body:expr) => (
+        req! {$name, $buf, Ok(Status::Complete($buf.len())), |$arg| $body }
+    );
+    ($name:ident, $buf:expr, $len:expr, |$arg:ident| $body:expr) => (
+    #[test]
+    fn $name() {
+        let mut headers = [EMPTY_HEADER; NUM_OF_HEADERS];
+        let mut req = Request::new(&mut headers[..]);
+        let status = req.parse($buf.as_ref());
+        assert_eq!(status, $len);
+        closure(req);
+
+        fn closure($arg: Request) {
+            $body
+        }
+    }
+    )
 }
 
 //Handle TLS process messages errors

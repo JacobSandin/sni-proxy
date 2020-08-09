@@ -7,19 +7,22 @@ use mio::{
 use rustls;
 use rustls::{Session, TLSError};
 
-use cmp::min;
-use httparse;
+//use cmp::min;
+use httparse::{self, Request};
 use std::{
-    cmp,
+    //    cmp,
     collections::{HashMap, VecDeque},
     io,
     io::{Read, Write},
     net,
     sync::Arc,
-    time::Instant,
+    time::Instant, cmp::min,
 };
 
-use crate::{ok_macro, process_error_handling, read_error_handling, write_error_handling};
+use crate::{
+    cache_test::Cacher, http_parser::try_iterate_bytes, ok_macro, process_error_handling,
+    read_error_handling, write_error_handling,
+};
 
 #[derive(Debug)] //Instant::now();
 pub struct ConnectionSource {
@@ -45,6 +48,7 @@ pub struct ConnectionSource {
     bytes_sent: usize,
     bytes_received: usize,
     activity_timeout: Option<Instant>,
+    http_get_path: String,
 }
 
 // All functions here are needed to comply with the source implementation
@@ -172,6 +176,7 @@ impl ConnectionSource {
             bytes_sent: 0,
             bytes_received: 0,
             activity_timeout: None,
+            http_get_path: String::new(),
         };
         m_session
     }
@@ -180,22 +185,21 @@ impl ConnectionSource {
 // HTTP
 impl ConnectionSource {
     fn https_reader(&mut self) -> bool {
-        //let mut received_data: Vec<u8> = Vec::new();
-        debug!("Entering HTTPS_READER");
+        trace!("Entering HTTPS_READER");
         loop {
             let mut buf = [0; 256];
 
             match self.tls_session.as_mut().unwrap().read(&mut buf) {
-                Ok(0) => {
-                    debug!(target: &self.server_token.0.to_string(),"https_reader read 0");
-                    return true;
-                }
+                // Ok(0) => {
+                //     trace!(target: &self.server_token.0.to_string(),"https_reader read 0");
+                //     return true;
+                // }
                 Ok(n) => {
                     self.activity_timeout = None;
                     let u: usize = n.to_string().parse().unwrap();
                     self.bytes_sent = self.bytes_sent + n;
                     self.buf_forward.extend_from_slice(&buf[0..u]);
-                    debug!(target: &self.server_token.0.to_string(),"https_reader read {}",n);
+                    trace!(target: &self.server_token.0.to_string(),"https_reader read {}",n);
                     if n < buf.len() {
                         //self.activity_timeout= Instant::now();
                         return true;
@@ -204,15 +208,16 @@ impl ConnectionSource {
                 }
                 //Looks to be what registers when finished reading.
                 Err(e) if e.kind() == io::ErrorKind::WouldBlock => {
-                    debug!(target: &self.server_token.0.to_string(),"https_reader Would block\r\n{:?}",e);
+                    trace!(target: &self.server_token.0.to_string(),"https_reader Would block\r\n{:?}",e);
                     if self.buf_forward.len() > 0 {
                         //self.activity_timeout= Instant::now();
+                       
                         return true;
                     }
-                    return false;
+                    //return false;
                 }
                 Err(e) if e.kind() == io::ErrorKind::Interrupted => {
-                    debug!(target: &self.server_token.0.to_string(),"https_reader Interupted\r\n{:?}",e);
+                    trace!(target: &self.server_token.0.to_string(),"https_reader Interupted\r\n{:?}",e);
                     continue;
                 }
                 Err(e) => {
@@ -255,14 +260,14 @@ impl ConnectionSource {
             match self.server_stream.read(&mut buf) {
                 // https://tokio.rs/blog/2019-12-mio-v0.7-alpha.1
                 // Ok(0) => {
-                //     debug!(target: &self.server_token.0.to_string(),"http_reader read 0");
+                //     trace!(target: &self.server_token.0.to_string(),"http_reader read 0");
                 //     return true;
                 // }
                 Ok(n) => {
                     self.activity_timeout = None;
                     self.bytes_sent = self.bytes_sent + n;
                     self.buf_forward.extend_from_slice(&buf[0..n]);
-                    debug!(target: &self.server_token.0.to_string(),"http_reader read {}",n);
+                    trace!(target: &self.server_token.0.to_string(),"http_reader read {}",n);
                     if n < 2048 {
                         //self.activity_timeout= Instant::now();
                         return true;
@@ -271,15 +276,16 @@ impl ConnectionSource {
                 }
                 //Looks to be what registers when finished reading.
                 Err(e) if e.kind() == io::ErrorKind::WouldBlock => {
-                    debug!(target: &self.server_token.0.to_string(),"http_reader Would block\r\n{:?}",e);
+                    trace!(target: &self.server_token.0.to_string(),"http_reader Would block\r\n{:?}",e);
                     if self.buf_forward.len() > 0 {
+                        self.print_header(&self.buf_forward);
                         //self.activity_timeout= Instant::now();
                         return true;
                     }
                     return false;
                 }
                 Err(e) if e.kind() == io::ErrorKind::Interrupted => {
-                    debug!(target: &self.server_token.0.to_string(),"http_reader Interupted\r\n{:?}",e);
+                    trace!(target: &self.server_token.0.to_string(),"http_reader Interupted\r\n{:?}",e);
                     continue;
                 }
                 Err(e) => {
@@ -297,7 +303,6 @@ impl ConnectionSource {
             let res = self.server_stream.write_all(&buf.unwrap().as_mut_slice());
             match res {
                 Ok(()) => {
-                    //self.activity_timeout= Instant::now();
                     self.bytes_received = self.bytes_received + len;
                     self.activity_timeout = Some(Instant::now());
                     return Some(true);
@@ -312,35 +317,36 @@ impl ConnectionSource {
     }
 
     fn http_fwd_reader(&mut self) -> bool {
-        //let mut received_data: Vec<u8> = Vec::new();
         loop {
-            let mut buf = [0; 4096];
+            let mut buf = [0; 1024];
             match self.forward_stream.as_mut().unwrap().read(&mut buf) {
                 // https://tokio.rs/blog/2019-12-mio-v0.7-alpha.1
                 // Ok(0) => {
-                //     debug!(target: &self.server_token.0.to_string(),"http_fwd_reader read 0");
+                //     trace!(target: &self.server_token.0.to_string(),"http_fwd_reader read 0");
                 //     return true;
                 // }
                 Ok(n) => {
-                    self.buf_client.extend_from_slice(&buf[0..n]);
-                    debug!(target: &self.server_token.0.to_string(),"http_fwd_reader read {}",n);
-                    if n < 4096 {
+                    if n > 0 {
+                        self.buf_client.extend_from_slice(&buf[0..n]);
+                    }
+                    trace!(target: &self.server_token.0.to_string(),"http_fwd_reader read {}",n);
+                    if n < 1024 {
+                         self.print_header(&self.buf_client);
                         //self.activity_timeout= Instant::now();
                         return true;
                     }
-                    //return None;
                 }
                 //Looks to be what registers when finished reading.
                 Err(e) if e.kind() == io::ErrorKind::WouldBlock => {
-                    debug!(target: &self.server_token.0.to_string(),"http_fwd_reader Would block\r\n{:?}",e);
+                    trace!(target: &self.server_token.0.to_string(),"http_fwd_reader Would block\r\n{:?}",e);
                     if self.buf_client.len() > 0 {
-                        //self.activity_timeout= Instant::now();
+                        self.print_header(&self.buf_client);
                         return true;
                     }
                     return false;
                 }
                 Err(e) if e.kind() == io::ErrorKind::Interrupted => {
-                    debug!(target: &self.server_token.0.to_string(),"http_fwd_reader Interupted\r\n{:?}",e);
+                    trace!(target: &self.server_token.0.to_string(),"http_fwd_reader Interupted\r\n{:?}",e);
                     continue;
                 }
                 Err(e) => {
@@ -351,10 +357,10 @@ impl ConnectionSource {
         }
     }
 
-    fn http_fwd_writer(&mut self) -> Option<bool> {
+    fn http_fwd_writer(&mut self) -> bool {
         while self.send_to_farward.len() > 0 {
             let buf = self.send_to_farward.pop_front();
-            debug!(target: &self.server_token.0.to_string(),"http_fwd_writer data: {}",String::from_utf8_lossy(&buf.clone().unwrap().as_slice()));
+            trace!(target: &self.server_token.0.to_string(),"http_fwd_writer data: \r\n{}",String::from_utf8_lossy(&buf.clone().unwrap().as_slice()));
             let res = self
                 .forward_stream
                 .as_mut()
@@ -362,129 +368,75 @@ impl ConnectionSource {
                 .write_all(&buf.unwrap().as_mut_slice());
             match res {
                 Ok(()) => {
-                    //self.activity_timeout= Instant::now();
-                    return Some(true);
+                    return true;
                 }
                 Err(e) => {
-                    error!(target: &self.server_token.0.to_string(),"http_fwd_writer Unknown error: \r\n{:?}",e);
-                    return Some(false);
+                    trace!(target: &self.server_token.0.to_string(),"http_fwd_writer Unknown error: \r\n{:?}",e);
+                    return false;
                 }
             }
         }
-        Some(true)
+        return true;
+    }
+    
+    fn print_header(&self, buf: &Vec<u8>) {
+        if String::from_utf8_lossy(buf.as_slice()).contains("\r\n\r\n") {
+            debug!("Headers:\r\n{}", String::from_utf8_lossy(&buf[0..min(256,buf.len())]));
+        }
     }
 
     fn set_forward_adress(&mut self) -> bool {
+        if !self.forward_host.is_empty() {
+            return true;
+        }
         if String::from_utf8_lossy(&self.buf_forward.as_slice()).contains("\r\n\r\n") {
-            debug!("{}", String::from_utf8_lossy(&self.buf_forward.as_slice()));
+            //trace!("{}", String::from_utf8_lossy(&self.buf_forward.as_slice()));
             //TODO should be a reusable struct maby.
-            let mut headers = [httparse::EMPTY_HEADER; 200];
-            let mut req = httparse::Request::new(&mut headers);
-            let b = Vec::from(self.buf_forward.clone());
-            match req.parse(b.as_slice()) {
-                Ok(_) => (),
-                Err(e) => {
-                    error!(target: &self.server_token.0.to_string(),"Read http-parse error unknown: {:?}",e);
-                    // httparse::Status::Partial.into()
-                    return false;
-                    //()
-                }
-            };
+            self.http_parse_set_host();
 
-            //TODO is host always on index 0?
-            self.request_host = format!("{}", String::from_utf8_lossy(req.headers[0].value));
-
-            debug!(target: &self.server_token.0.to_string(),"Method: {}, Path: {}, Host: {}",req.method.unwrap_or(""),req.path.unwrap_or(""),self.request_host);
-            for h in req.headers {
-                debug!(target: &self.server_token.0.to_string(),"Header --> {}: {}",h.name,String::from_utf8_lossy(h.value));
-            }
             return true;
         }
         true
     }
+
+    fn http_parse_set_host(&mut self) -> bool {
+        let mut headers = [httparse::EMPTY_HEADER; 200];
+        let mut req = httparse::Request::new(&mut headers);
+        let b: Vec<u8> = Vec::from(self.buf_forward.clone());
+        match req.parse(b.as_slice()) {
+            Ok(_) => (),
+            Err(e) => {
+                error!(target: &self.server_token.0.to_string(),"Read http-parse error unknown: {:?}",e);
+                return false;
+            }
+        };
+
+        //TODO is host always on index 0?
+        self.request_host = format!("{}", String::from_utf8_lossy(req.headers[0].value));
+
+        self.http_get_path = String::from(req.path.unwrap_or_else(|| ""));
+
+        trace!(target: &self.server_token.0.to_string(),"Method: {}, Path: {}, Host: {}",
+            req.method.unwrap_or(""),
+            req.path.unwrap_or(""),self.request_host);
+        for h in req.headers {
+            trace!(target: &self.server_token.0.to_string(),"Header --> {}: {}",h.name,String::from_utf8_lossy(h.value));
+        }
+        return true;
+    }
 }
 
 impl ConnectionSource {
-    fn https_forward_reader(&mut self, registry: &Registry) -> Option<bool> {
-        // Test so that we actually have nothing in the que first, and that we have a stream to work with.
-        //            if self.send_to_client.is_none() && self.forward_stream.is_some() {
-        let mut received_data = Vec::new();
-        //Loop to read all incomming data
-        let now = Instant::now();
-        loop {
-            //TODO: check that the buffer is not to small or too big, wich is normal?
-            let mut buf = [0; 512];
-            let res = self.forward_stream.as_mut().unwrap().read(&mut buf);
-            trace!(target: &self.server_token.0.to_string(),"ForRead Checking read errors");
-            //Send along to macro for errorhandling.
-            read_error_handling!(self, res, received_data, buf, now);
-        }
-
-        trace!(target: &self.server_token.0.to_string(),
-            "ForRead Got data from forward host: \r\n{}",
-            String::from_utf8_lossy(&received_data[..cmp::min(received_data.len(), 256)])
-        );
-        //Set data for server_stream to send to client.
-        self.send_to_client.push_back(received_data);
-
-        //Reregister the server to write the new DATA.
-        self.reregister(
-            registry,
-            self.forward_token,
-            Interest::WRITABLE | Interest::READABLE,
-        )
-        .unwrap();
-        //self.activity_timeout= Instant::now();
-        Some(true)
-    }
-
-    fn https_forward_writer(&mut self, registry: &Registry) -> Option<bool> {
-        let send_this = self.send_to_farward.pop_front().unwrap();
-
-        //Just for not logging too much information in debug
-        let len = min(send_this.len(), 1024);
-        trace!(target: &self.server_token.0.to_string(),
-            "ForWrite Forwarding: \r\n{}",
-            String::from_utf8_lossy(&send_this[..len])
-        );
-
-        //Sending the request collected from client to backend host.
-        let stream = self
-            .forward_stream
-            .as_mut()
-            .expect("ForWrite expecting stream");
-        let ret = stream.write(&send_this);
-
-        //Handle errors with macro
-        write_error_handling!(self, ret);
-
-        //Flush and reset
-        ok_macro!(self, stream.flush());
-        // self.send_to_farward = None;
-
-        //Reregister for reading so we can collect the backend answer.
-        trace!(target: &self.server_token.0.to_string(),"ForWrite Reregistering for READ");
-        ok_macro!(
-            self,
-            self.reregister(
-                registry,
-                self.forward_token,
-                Interest::READABLE | Interest::WRITABLE
-            )
-        );
-        //self.activity_timeout= Instant::now();
-        Some(true)
-    }
 
     //Used by read above to start a forward_stream to handle sending along the request to
     //the backend host, and to then read the reply and send along to the server_stream that
     //then in the above write function will send it to the client.
     fn activate_forward_stream(&mut self, registry: &Registry) -> bool {
-        debug!("Enter activate_forward_stream");
+        trace!("Enter activate_forward_stream");
         //self.activity_timeout= Instant::now();
         // Did not help to prevent white pages
         // if self.forward_stream.is_some() {
-        //     debug!(target: &self.server_token.0.to_string(),"Seting to none");
+        //     trace!(target: &self.server_token.0.to_string(),"Seting to none");
         //     self.forward_stream.as_mut().unwrap().shutdown(net::Shutdown::Both).ok();
         //     self.forward_stream = None;
         // }
@@ -495,9 +447,7 @@ impl ConnectionSource {
                 self.forward_host = self
                     .forward_lookup
                     .get(&self.request_host)
-                    .unwrap_or(
-                        &dotenv::var("DEFAULT_FORWARD").unwrap_or(String::from("")),
-                    )
+                    .unwrap_or(&dotenv::var("DEFAULT_FORWARD").unwrap_or(String::from("")))
                     //                    .unwrap_or(&String::from("192.168.96.54:80"))
                     .parse()
                     .expect("what2");
@@ -507,15 +457,14 @@ impl ConnectionSource {
                     self.server_stream.peer_addr().expect("Peer_Addr").to_string(),
                       self.request_host, self.server_stream.local_addr().expect("ServerStream").port(),self.forward_host);
 
-                    let socket: Result<std::net::SocketAddr,_> = self.forward_host.parse();
+                let socket: Result<std::net::SocketAddr, _> = self.forward_host.parse();
                 if socket.is_ok() {
-                        Some(TcpStream::connect(socket.unwrap()).unwrap())
+                    Some(TcpStream::connect(socket.unwrap()).unwrap())
                 } else {
                     self.closing = true;
                     error!(target: &self.server_token.0.to_string(),"We have no forwarding adress for {}",&self.request_host);
                     None
-                }  
-                
+                }
             } else {
                 //Anything else are assigned the following port and IP
                 error!(target: &self.server_token.0.to_string(),"Could not find forward adress return with false!");
@@ -526,25 +475,19 @@ impl ConnectionSource {
 
             //We need to register the forward stream, as it is newly created, or recreated.
             //We only need to write as we just filled in data for it to send.
-            debug!(target: &self.server_token.0.to_string(),"Forward stream set to for WRITE");
+            trace!(target: &self.server_token.0.to_string(),"Forward stream set to for WRITE");
             self.register(registry, self.forward_token, Interest::WRITABLE)
                 .ok();
-            debug!(target: &self.server_token.0.to_string(),"Forward stream Created...");
+            trace!(target: &self.server_token.0.to_string(),"Forward stream Created...");
             return true;
         } else {
             //We already have a forward_stream so lets just reregister that one.
             //We only need to write as we just filled in data for it to send.
             self.reregister(registry, self.forward_token, Interest::WRITABLE)
                 .ok();
-            debug!(target: &self.server_token.0.to_string(),"Write Server ReCreated...");
+            trace!(target: &self.server_token.0.to_string(),"Write Server ReCreated...");
             return true;
         }
-        //Getting len just for logging
-        // let len = self.send_to_farward.len();
-        // trace!(
-        //     "Read Confirming send_to_forward has data:\r\n{}",
-        //     String::from_utf8_lossy(&self.send_to_farward.as_mut().unwrap()[..min(len, 1024)])
-        // );
     }
 }
 
@@ -568,8 +511,6 @@ impl ConnectionSource {
         event: &Event,
         token: Token,
     ) -> Option<bool> {
-
-
         // if token == self.server_token {
         //     self.server_stream.deregister(registry).expect("Expected to deregister server thread on entry!");
         // }
@@ -581,13 +522,11 @@ impl ConnectionSource {
         // Too much trace!(target: &self.server_token.0.to_string(),"Main incomming Event: \r\n{:?}",event);
         //TODO set config for connection timout
         if self.activity_timeout.is_some()
-            && self.activity_timeout.unwrap().elapsed().as_millis() > 100
+            && self.activity_timeout.unwrap().elapsed().as_millis() > 300
         {
             self.closing = true;
         }
 
-
-        
         //Success is used to check if thefunctions called have succeeded or not, we might
         // in the future decide closing depending on this, we will have too see.
         // And for logging to see where the code fails depending on where this changes.
@@ -597,23 +536,22 @@ impl ConnectionSource {
         let mut forward = token == self.forward_token && self.forward_stream.is_some();
 
         //if fwd_ok_r is true We are ok to read the forward stream.
-        let fwd_ok_r =
-            forward && event.is_readable() && self.forward_stream.is_some() && self.do_tls;
+        let fwd_ok_r = forward && event.is_readable() && self.forward_stream.is_some();
         //if fwd_ok_w is true We are ok to write the forward stream.
         let fwd_ok_w = forward
             && event.is_writable()
             && self.forward_stream.is_some()
-            && self.send_to_farward.len() > 0
-            && self.do_tls;
+            && self.send_to_farward.len() > 0;
+        //&& self.do_tls;
 
-        let http_fwd_ok_r =
-            forward && event.is_readable() && self.forward_stream.is_some() && !self.do_tls;
+        // let http_fwd_ok_r =
+        //     forward && event.is_readable() && self.forward_stream.is_some() && !self.do_tls;
 
-        let http_fwd_ok_w = forward
-            && event.is_writable()
-            && self.forward_stream.is_some()
-            && self.send_to_farward.len() > 0
-            && !self.do_tls;
+        // let http_fwd_ok_w = forward
+        //     && event.is_writable()
+        //     && self.forward_stream.is_some()
+        //     && self.send_to_farward.len() > 0
+        //     && !self.do_tls;
         //if tls_ok_r is true we have tls and we are ok to read the tls_session
         let tls_ok_r = event.is_readable() && !forward && self.do_tls;
 
@@ -624,10 +562,10 @@ impl ConnectionSource {
             && self.tls_session.is_some()
             && self.tls_session.as_mut().unwrap().wants_write();
 
-        //if cli_ok_r is true we are ok to read from the client via server_stream
-        let cli_ok_r = event.is_readable() && self.do_tls;
+        //if https_ok_r is true we are ok to read from the client via server_stream
+        let https_ok_r = event.is_readable() && self.do_tls;
         //if fwd_ok_w is true we are ok to write to the client via server_stream
-        let cli_ok_w = event.is_writable() && self.do_tls;
+        let https_ok_w = event.is_writable() && self.do_tls;
 
         let http_ok_r = event.is_readable() && !self.do_tls;
         //if fwd_ok_w is true we are ok to write to the client via server_stream
@@ -747,14 +685,14 @@ impl ConnectionSource {
         //not needed.
         // if self.counter > 20 {
         //     ok_macro!(self, self.reregister(registry, token, Interest::READABLE));
-        // } else if !tls_ok_r && !tls_ok_w && !cli_ok_r && cli_ok_w && !fwd_ok_r && !fwd_ok_w {
+        // } else if !tls_ok_r && !tls_ok_w && !https_ok_r && https_ok_w && !fwd_ok_r && !fwd_ok_w {
         //    self.counter += 1;
         // } else {
         //     self.counter = 0;
         // }
 
-        trace!(target: &self.server_token.0.to_string(),"tls_ok_r: {} ntls_ok_w: {} cli_ok_r: {} cli_ok_w: {} fwd_ok_r: {} fwd_ok_w: {}",
-        tls_ok_r,tls_ok_w,cli_ok_r,cli_ok_w,fwd_ok_r,fwd_ok_w);
+        trace!(target: &self.server_token.0.to_string(),"tls_ok_r: {} ntls_ok_w: {} https_ok_r: {} https_ok_w: {} fwd_ok_r: {} fwd_ok_w: {}",
+        tls_ok_r,tls_ok_w,https_ok_r,https_ok_w,fwd_ok_r,fwd_ok_w);
 
         /*
 
@@ -775,7 +713,18 @@ impl ConnectionSource {
         if fwd_ok_w {
             trace!(target: &self.server_token.0.to_string(),"Entering FWD_W ({})", success);
 
-            self.https_forward_writer(registry);
+            if self.http_fwd_writer() {
+                ok_macro!(
+                    self,
+                    self.reregister(
+                        registry,
+                        self.forward_token,
+                        Interest::READABLE | Interest::WRITABLE
+                    )
+                );
+            }
+
+            //self.https_forward_writer(registry);
 
             trace!(target: &self.server_token.0.to_string(),"Exiting FWD_W ({})", success);
         }
@@ -784,21 +733,31 @@ impl ConnectionSource {
         if fwd_ok_r {
             trace!(target: &self.server_token.0.to_string(),"Entering FWD_R ({})", success);
 
-            self.https_forward_reader(registry);
+            if self.http_fwd_reader() {
+                let mut c = Cacher::new();
+                c.cache_this(&self.request_host, &self.forward_host, &self.http_get_path)
+                     .expect("Expected cacher to cache_this");
+
+                //try_iterate_bytes(self.buf_client.clone());
+
+                &self.send_to_client.push_back(self.buf_client.clone());
+                &self.buf_client.clear();
+            } else {
+                success = false;
+            }
+            ok_macro!(
+                self,
+                self.reregister(
+                    registry,
+                    self.forward_token,
+                    Interest::READABLE | Interest::WRITABLE
+                )
+            );
 
             trace!(target: &self.server_token.0.to_string(),"Exiting FWD_R ({})", success);
         } //DONE fwd_ok_r
         trace!(target: &self.server_token.0.to_string(),"MAIN closing: ({})", self.closing);
 
-        // IF we are in forward, we can stop processing here and reregister for both READ/WRITE
-        // Maby we should just close it down, but lets try without the open/close overhead.
-        if fwd_ok_r || fwd_ok_w {
-            ok_macro!(
-                self,
-                self.reregister(registry, token, Interest::READABLE | Interest::WRITABLE)
-            );
-            return Some(true);
-        }
 
         /*
 
@@ -852,14 +811,24 @@ impl ConnectionSource {
 
         */
         trace!(target: &self.server_token.0.to_string(),"MAIN closing: ({})", self.closing);
-        if cli_ok_r {
+        if https_ok_r {
             trace!(target: &self.server_token.0.to_string(),"Entering CLI_R ({})", success);
             if self.https_reader() {
                 //Finished
                 if self.set_forward_adress() {
-                    &self.send_to_farward.push_back(self.buf_forward.clone());
-                    &self.buf_forward.clear();
-                    self.activate_forward_stream(registry);
+                     let c = Cacher::new();
+                     let some_cached = c.read_path(&self.request_host, &self.http_get_path);
+                     if some_cached.is_ok() && some_cached.as_ref().unwrap().is_some() {
+                         let cache = &some_cached.unwrap();
+                         let cache = cache.clone().unwrap();
+                         self.send_to_client.push_back(cache);
+                         &self.buf_forward.clear();
+                         //error!("GGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGG");
+                     } else {
+                        &self.send_to_farward.push_back(self.buf_forward.clone());
+                        &self.buf_forward.clear();
+                        self.activate_forward_stream(registry);
+                    }
                 }
             } else {
                 success = false;
@@ -868,53 +837,15 @@ impl ConnectionSource {
         }
 
         trace!(target: &self.server_token.0.to_string(),"MAIN closing: ({})", self.closing);
-        if cli_ok_w {
+        if https_ok_w {
             trace!(target: &self.server_token.0.to_string(),"Entering CLI_W ({})", success);
             self.https_writer();
             //success = self.client_writer(event, registry).unwrap();
             trace!(target: &self.server_token.0.to_string(),"Exiting CLI_W ({})", success);
         }
 
-        /*
-
-            Do http://
-
-        */
-        if http_fwd_ok_w {
-            debug!(target: &self.server_token.0.to_string(),"Entering HTTP_FWD_W ({})", success);
-            self.http_fwd_writer();
-            ok_macro!(
-                self,
-                self.reregister(
-                    registry,
-                    self.forward_token,
-                    Interest::READABLE | Interest::WRITABLE
-                )
-            );
-            debug!(target: &self.server_token.0.to_string(),"Exit HTTP_FWD_W ({})", success);
-        }
-
-        if http_fwd_ok_r {
-            debug!(target: &self.server_token.0.to_string(),"Entering HTTP_FWD_R ({})", success);
-            if self.http_fwd_reader() {
-                &self.send_to_client.push_back(self.buf_client.clone());
-                &self.buf_client.clear();
-            } else {
-                success = false;
-            }
-            ok_macro!(
-                self,
-                self.reregister(
-                    registry,
-                    self.forward_token,
-                    Interest::READABLE | Interest::WRITABLE
-                )
-            );
-            debug!(target: &self.server_token.0.to_string(),"Exit HTTP_FWD_R ({})", success);
-        }
-
         if http_ok_r {
-            debug!(target: &self.server_token.0.to_string(),"Entering HTTP_R ({})", success);
+            trace!(target: &self.server_token.0.to_string(),"Entering HTTP_R ({})", success);
             if self.http_reader() {
                 if self.set_forward_adress() {
                     &self.send_to_farward.push_back(self.buf_forward.clone());
@@ -922,18 +853,18 @@ impl ConnectionSource {
                     self.activate_forward_stream(registry);
                 }
 
-                debug!(target: &self.server_token.0.to_string(),"HTTP_R finished reading http");
+                trace!(target: &self.server_token.0.to_string(),"HTTP_R finished reading http");
             } else {
                 success = false;
             }
 
-            debug!(target: &self.server_token.0.to_string(),"Exiting HTTP_R ({})", success);
+            trace!(target: &self.server_token.0.to_string(),"Exiting HTTP_R ({})", success);
         }
 
         if http_ok_w {
-            debug!(target: &self.server_token.0.to_string(),"Entering HTTP_W ({})", success);
+            trace!(target: &self.server_token.0.to_string(),"Entering HTTP_W ({})", success);
             self.http_writer();
-            debug!(target: &self.server_token.0.to_string(),"Entering HTTP_W ({})", success);
+            trace!(target: &self.server_token.0.to_string(),"Entering HTTP_W ({})", success);
         }
 
         /*
@@ -961,7 +892,7 @@ impl ConnectionSource {
         //it or it will not be called again, and die the slow death.
         //TODO: We probably need errorhandling here.
         if self.send_to_farward.len() > 0 {
-            //debug!(target: &self.server_token.0.to_string(),"Forward Registering READ.");
+            //trace!(target: &self.server_token.0.to_string(),"Forward Registering READ.");
             //self.activate_forward_stream(registry);
         }
 
@@ -1020,8 +951,7 @@ impl ConnectionSource {
             drop(self.forward_stream.as_ref().unwrap());
         }
 
-        
-            drop(&self.server_stream);
+        drop(&self.server_stream);
         // Deregister server_stream and forward_stream if it exists
         ok_macro!(self, self.deregister(registry));
         trace!(target: &self.server_token.0.to_string(),"Exit: close_all closing connections");

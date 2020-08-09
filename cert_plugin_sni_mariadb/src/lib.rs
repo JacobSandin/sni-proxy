@@ -33,11 +33,6 @@ impl CH {
 }
 
 impl CertificateHandler for CH {
-    fn is_sni(&self) -> bool {
-        info!(target: "0","is_sni");
-
-        true
-    }
     fn get_forwards(&self) -> Box<Arc<HashMap<String, String>>> {
         info!(target: "0","Load forwards from database");
         let import_certificates = &self.import_certificates;
