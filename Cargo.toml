@@ -1,7 +1,11 @@
 [workspace]
 members = [
-    "proxy_server",
+    "sni_proxy",
     "interfaces",
     "cert_plugin_sni_mariadb",
     "cache_plugin",
+    "cache_iterator",
 ]
+# exclude = [
+#     "cache_iterator",
+# ]
