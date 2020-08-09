@@ -8,7 +8,7 @@ use rustls;
 use rustls::{Session, TLSError};
 
 //use cmp::min;
-use httparse::{self, Request};
+use httparse::{self};
 use std::{
     //    cmp,
     collections::{HashMap, VecDeque},
@@ -19,10 +19,13 @@ use std::{
     time::Instant, cmp::min,
 };
 
+
 use crate::{
-    cache_test::Cacher, http_parser::try_iterate_bytes, ok_macro, process_error_handling,
+    ok_macro, process_error_handling,
     read_error_handling, write_error_handling,
 };
+
+use interfaces::Cacher;
 
 #[derive(Debug)] //Instant::now();
 pub struct ConnectionSource {
@@ -511,6 +514,30 @@ impl ConnectionSource {
         event: &Event,
         token: Token,
     ) -> Option<bool> {
+
+
+    let lib = match libloading::Library::new(
+        dotenv::var("SNI_CACHE_PLUGIN").unwrap_or(String::from("")),
+    ) {
+        Ok(a) => Some(a),
+        Err(e) => {
+            info!(target: "0","No certificate plugin to load! Error: \r\n {:?}",e);
+            debug!(target: "0","Error: \r\n {:?}",e);
+            None
+        }
+    };
+    let ch: Option<Box<dyn Cacher>> = if lib.is_some() {
+        let get_cacher: libloading::Symbol<fn() -> Box<dyn Cacher>> =
+            unsafe { lib.as_ref().unwrap().get(b"get_cacher") }.expect("load symbol");
+        let ch =get_cacher();
+        Some(ch)
+    //Create an arc of the forwards
+    } else {
+        None
+    };
+
+    let mut cacher = ch.unwrap();
+
         // if token == self.server_token {
         //     self.server_stream.deregister(registry).expect("Expected to deregister server thread on entry!");
         // }
@@ -680,17 +707,6 @@ impl ConnectionSource {
             forward
         );
 
-        //Not realy used, its mostly to track infinite loops that we shoukd control,
-        //even though we are in an infinite loop we should not process stuff when it is
-        //not needed.
-        // if self.counter > 20 {
-        //     ok_macro!(self, self.reregister(registry, token, Interest::READABLE));
-        // } else if !tls_ok_r && !tls_ok_w && !https_ok_r && https_ok_w && !fwd_ok_r && !fwd_ok_w {
-        //    self.counter += 1;
-        // } else {
-        //     self.counter = 0;
-        // }
-
         trace!(target: &self.server_token.0.to_string(),"tls_ok_r: {} ntls_ok_w: {} https_ok_r: {} https_ok_w: {} fwd_ok_r: {} fwd_ok_w: {}",
         tls_ok_r,tls_ok_w,https_ok_r,https_ok_w,fwd_ok_r,fwd_ok_w);
 
@@ -724,8 +740,6 @@ impl ConnectionSource {
                 );
             }
 
-            //self.https_forward_writer(registry);
-
             trace!(target: &self.server_token.0.to_string(),"Exiting FWD_W ({})", success);
         }
 
@@ -734,8 +748,8 @@ impl ConnectionSource {
             trace!(target: &self.server_token.0.to_string(),"Entering FWD_R ({})", success);
 
             if self.http_fwd_reader() {
-                let mut c = Cacher::new();
-                c.cache_this(&self.request_host, &self.forward_host, &self.http_get_path)
+                //let mut c = Cacher::new();
+                cacher.cache_update_and_test_path(&self.request_host, &self.forward_host, &self.http_get_path,&self.buf_client.clone())
                      .expect("Expected cacher to cache_this");
 
                 //try_iterate_bytes(self.buf_client.clone());
@@ -816,14 +830,19 @@ impl ConnectionSource {
             if self.https_reader() {
                 //Finished
                 if self.set_forward_adress() {
-                     let c = Cacher::new();
-                     let some_cached = c.read_path(&self.request_host, &self.http_get_path);
-                     if some_cached.is_ok() && some_cached.as_ref().unwrap().is_some() {
-                         let cache = &some_cached.unwrap();
-                         let cache = cache.clone().unwrap();
+                     //let c = Cacher::new();
+                     
+                      let res = cacher.cache_read_path(&self.request_host, &self.http_get_path);
+                      let opt = res.clone();
+                      
+                      //opt
+
+
+                     if  opt.is_some() {
+                         let cache = opt.unwrap();
+                         //let cache = cache.clone().unwrap();
                          self.send_to_client.push_back(cache);
                          &self.buf_forward.clear();
-                         //error!("GGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGG");
                      } else {
                         &self.send_to_farward.push_back(self.buf_forward.clone());
                         &self.buf_forward.clear();

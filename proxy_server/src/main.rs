@@ -137,9 +137,6 @@ fn run() -> Result<(), Box<dyn Error>> {
         .parse()
         .unwrap_or(false);
 
-    // for (k,v) in dotenv::vars() {
-    //     debug!("{} = {}",k,v);
-    // }
 
     let test = dotenv::var(&"CERT_KEY_FILE").unwrap_or(String::from("none"));
 

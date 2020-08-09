@@ -3,4 +3,5 @@ members = [
     "proxy_server",
     "interfaces",
     "cert_plugin_sni_mariadb",
+    "cache_plugin",
 ]
