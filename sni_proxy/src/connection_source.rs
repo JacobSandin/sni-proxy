@@ -303,6 +303,7 @@ impl ConnectionSource {
         while self.send_to_client.len() > 0 {
             let buf = self.send_to_client.pop_front();
             let len = buf.clone().unwrap().len();
+            error!("Buf :\r\n{}", String::from_utf8_lossy(&buf.clone().unwrap()[0..min(512,len)]));
             let res = self.server_stream.write_all(&buf.unwrap().as_mut_slice());
             match res {
                 Ok(()) => {
@@ -430,7 +431,17 @@ impl ConnectionSource {
 }
 
 impl ConnectionSource {
-
+    fn send_301_reply(&mut self) -> bool {
+       if self.server_stream.local_addr().unwrap().port() == 80 && dotenv::var("HTTP_REDIRECT_TO_HTTPS").unwrap_or(String::from("")).contains("true") {
+            let resp = format!("HTTP/1.1 301 Moved Permanently\r\nLocation: https://{}{}\r\n\r\n",&self.request_host,&self.http_get_path); 
+            let buf_rep:Vec<u8> = resp.clone().into_bytes();
+            self.send_to_client.push_back(buf_rep.clone());
+            println!("{}",resp);
+            self.http_writer();
+            return true;
+        }
+        false
+    }
     //Used by read above to start a forward_stream to handle sending along the request to
     //the backend host, and to then read the reply and send along to the server_stream that
     //then in the above write function will send it to the client.
@@ -459,6 +470,7 @@ impl ConnectionSource {
                     "Connection established {} -> {}:{} => {}",
                     self.server_stream.peer_addr().expect("Peer_Addr").to_string(),
                       self.request_host, self.server_stream.local_addr().expect("ServerStream").port(),self.forward_host);
+                
 
                 let socket: Result<std::net::SocketAddr, _> = self.forward_host.parse();
                 if socket.is_ok() {
@@ -866,7 +878,7 @@ impl ConnectionSource {
         if http_ok_r {
             trace!(target: &self.server_token.0.to_string(),"Entering HTTP_R ({})", success);
             if self.http_reader() {
-                if self.set_forward_adress() {
+                if self.set_forward_adress() && !self.send_301_reply() {
                     &self.send_to_farward.push_back(self.buf_forward.clone());
                     &self.buf_forward.clear();
                     self.activate_forward_stream(registry);

@@ -1,0 +1,123 @@
+ENV CARGO=/home/jacsan/.vim/plugged/YouCompleteMe/third_party/ycmd/third_party/rls/bin/rls
+ENV CARGO_CFG_TARGET_ARCH=x86_64
+ENV CARGO_CFG_TARGET_ENDIAN=little
+ENV CARGO_CFG_TARGET_ENV=gnu
+ENV CARGO_CFG_TARGET_FAMILY=unix
+ENV CARGO_CFG_TARGET_FEATURE=fxsr,mmx,sse,sse2
+ENV CARGO_CFG_TARGET_HAS_ATOMIC=16,32,64,8,ptr
+ENV CARGO_CFG_TARGET_HAS_ATOMIC_LOAD_STORE=16,32,64,8,ptr
+ENV CARGO_CFG_TARGET_OS=linux
+ENV CARGO_CFG_TARGET_POINTER_WIDTH=64
+ENV CARGO_CFG_TARGET_THREAD_LOCAL=
+ENV CARGO_CFG_TARGET_VENDOR=unknown
+ENV CARGO_CFG_UNIX=
+ENV CARGO_FEATURE_ALLOC=1
+ENV CARGO_FEATURE_DEFAULT=1
+ENV CARGO_FEATURE_DEV_URANDOM_FALLBACK=1
+ENV CARGO_FEATURE_ONCE_CELL=1
+ENV CARGO_MAKEFLAGS=--jobserver-fds=5,6 -j --jobserver-auth=5,6 -j
+ENV CARGO_MANIFEST_DIR=/home/jacsan/.cargo/registry/src/github.com-1ecc6299db9ec823/ring-0.16.15
+ENV CARGO_MANIFEST_LINKS=ring-asm
+ENV CARGO_PKG_AUTHORS=Brian Smith <brian@briansmith.org>
+ENV CARGO_PKG_DESCRIPTION=Safe, fast, small crypto using Rust.
+ENV CARGO_PKG_HOMEPAGE=
+ENV CARGO_PKG_NAME=ring
+ENV CARGO_PKG_REPOSITORY=https://github.com/briansmith/ring
+ENV CARGO_PKG_VERSION=0.16.15
+ENV CARGO_PKG_VERSION_MAJOR=0
+ENV CARGO_PKG_VERSION_MINOR=16
+ENV CARGO_PKG_VERSION_PATCH=15
+ENV CARGO_PKG_VERSION_PRE=
+ENV DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1002/bus
+ENV DEBUG=true
+ENV HOME=/home/jacsan
+ENV HOST=x86_64-unknown-linux-gnu
+ENV LANG=C.UTF-8
+ENV LD_LIBRARY_PATH=/home/jacsan/git/sni-proxy/sni_proxy/target/rls/debug/deps:/home/jacsan/.vim/plugged/YouCompleteMe/third_party/ycmd/third_party/rls/lib
+ENV LESSCLOSE=/usr/bin/lesspipe %s %s
+ENV LESSOPEN=| /usr/bin/lesspipe %s
+ENV LOGNAME=jacsan
+ENV LS_COLORS=rs=0:di=01;34:ln=01;36:mh=00:pi=40;33:so=01;35:do=01;35:bd=40;33;01:cd=40;33;01:or=40;31;01:mi=00:su=37;41:sg=30;43:ca=30;41:tw=30;42:ow=34;42:st=37;44:ex=01;32:*.tar=01;31:*.tgz=01;31:*.arc=01;31:*.arj=01;31:*.taz=01;31:*.lha=01;31:*.lz4=01;31:*.lzh=01;31:*.lzma=01;31:*.tlz=01;31:*.txz=01;31:*.tzo=01;31:*.t7z=01;31:*.zip=01;31:*.z=01;31:*.dz=01;31:*.gz=01;31:*.lrz=01;31:*.lz=01;31:*.lzo=01;31:*.xz=01;31:*.zst=01;31:*.tzst=01;31:*.bz2=01;31:*.bz=01;31:*.tbz=01;31:*.tbz2=01;31:*.tz=01;31:*.deb=01;31:*.rpm=01;31:*.jar=01;31:*.war=01;31:*.ear=01;31:*.sar=01;31:*.rar=01;31:*.alz=01;31:*.ace=01;31:*.zoo=01;31:*.cpio=01;31:*.7z=01;31:*.rz=01;31:*.cab=01;31:*.wim=01;31:*.swm=01;31:*.dwm=01;31:*.esd=01;31:*.jpg=01;35:*.jpeg=01;35:*.mjpg=01;35:*.mjpeg=01;35:*.gif=01;35:*.bmp=01;35:*.pbm=01;35:*.pgm=01;35:*.ppm=01;35:*.tga=01;35:*.xbm=01;35:*.xpm=01;35:*.tif=01;35:*.tiff=01;35:*.png=01;35:*.svg=01;35:*.svgz=01;35:*.mng=01;35:*.pcx=01;35:*.mov=01;35:*.mpg=01;35:*.mpeg=01;35:*.m2v=01;35:*.mkv=01;35:*.webm=01;35:*.ogm=01;35:*.mp4=01;35:*.m4v=01;35:*.mp4v=01;35:*.vob=01;35:*.qt=01;35:*.nuv=01;35:*.wmv=01;35:*.asf=01;35:*.rm=01;35:*.rmvb=01;35:*.flc=01;35:*.avi=01;35:*.fli=01;35:*.flv=01;35:*.gl=01;35:*.dl=01;35:*.xcf=01;35:*.xwd=01;35:*.yuv=01;35:*.cgm=01;35:*.emf=01;35:*.ogv=01;35:*.ogx=01;35:*.aac=00;36:*.au=00;36:*.flac=00;36:*.m4a=00;36:*.mid=00;36:*.midi=00;36:*.mka=00;36:*.mp3=00;36:*.mpc=00;36:*.ogg=00;36:*.ra=00;36:*.wav=00;36:*.oga=00;36:*.opus=00;36:*.spx=00;36:*.xspf=00;36:
+ENV MOTD_SHOWN=pam
+ENV MYVIMRC=/home/jacsan/.vimrc
+ENV NUM_JOBS=2
+ENV OPT_LEVEL=0
+ENV OUT_DIR=/home/jacsan/git/sni-proxy/sni_proxy/target/rls/debug/build/ring-2a86ac74414fbfc3/out
+ENV PATH=/home/jacsan/.cargo/bin:/home/jacsan/.fzf/bin:/home/jacsan/.cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games
+ENV PROFILE=debug
+ENV PWD=/home/jacsan/git/configs
+ENV RUSTC=/home/jacsan/.vim/plugged/YouCompleteMe/third_party/ycmd/third_party/rls/bin/rustc
+ENV RUSTDOC=rustdoc
+ENV RUSTFLAGS=
+ENV RUST_SRC_PATH=/home/jacsan/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/src
+ENV SHELL=/bin/fish
+ENV SHLVL=4
+ENV SSH_CLIENT=172.16.0.24 2440 2022
+ENV SSH_CONNECTION=172.16.0.24 3101 10.166.96.61 2022
+ENV SSH_TTY=/dev/pts/0
+ENV SSL_CERT_DIR=/usr/lib/ssl/certs
+ENV SSL_CERT_FILE=/usr/lib/ssl/certs/ca-certificates.crt
+ENV TARGET=x86_64-unknown-linux-gnu
+ENV TERM=xterm-256color
+ENV TMUX=/tmp/tmux-1002/default,519221,1
+ENV TMUX_PANE=%6
+ENV USER=jacsan
+ENV VIM=/usr/share/vim
+ENV VIMRUNTIME=/usr/share/vim/vim81
+ENV XDG_RUNTIME_DIR=/run/user/1002
+ENV XDG_SESSION_CLASS=user
+ENV XDG_SESSION_ID=2146
+ENV XDG_SESSION_TYPE=tty
+ENV _fzf_orig_completion_awk=complete -F %s awk #_longopt
+ENV _fzf_orig_completion_cat=complete -F %s cat #_longopt
+ENV _fzf_orig_completion_cd=complete -o nospace -F %s cd #_cd
+ENV _fzf_orig_completion_cp=complete -F %s cp #_longopt
+ENV _fzf_orig_completion_diff=complete -F %s diff #_longopt
+ENV _fzf_orig_completion_du=complete -F %s du #_longopt
+ENV _fzf_orig_completion_ftp=complete -F %s ftp #_known_hosts
+ENV _fzf_orig_completion_grep=complete -F %s grep #_longopt
+ENV _fzf_orig_completion_head=complete -F %s head #_longopt
+ENV _fzf_orig_completion_ld=complete -F %s ld #_longopt
+ENV _fzf_orig_completion_less=complete -F %s less #_longopt
+ENV _fzf_orig_completion_ln=complete -F %s ln #_longopt
+ENV _fzf_orig_completion_ls=complete -F %s ls #_longopt
+ENV _fzf_orig_completion_mv=complete -F %s mv #_longopt
+ENV _fzf_orig_completion_pushd=complete -o nospace -F %s pushd #_cd
+ENV _fzf_orig_completion_rm=complete -F %s rm #_longopt
+ENV _fzf_orig_completion_rmdir=complete -F %s rmdir #_longopt
+ENV _fzf_orig_completion_sed=complete -F %s sed #_longopt
+ENV _fzf_orig_completion_sort=complete -F %s sort #_longopt
+ENV _fzf_orig_completion_source=complete -F %s source #_minimal
+ENV _fzf_orig_completion_tail=complete -F %s tail #_longopt
+ENV _fzf_orig_completion_tee=complete -F %s tee #_longopt
+ENV _fzf_orig_completion_telnet=complete -F %s telnet #_known_hosts
+ENV _fzf_orig_completion_uniq=complete -F %s uniq #_longopt
+ENV _fzf_orig_completion_vim=complete -F %s vim #_filedir_xspec
+ENV _fzf_orig_completion_wc=complete -F %s wc #_longopt
+ENV is_vim=ps -o state= -o comm= -t '#{pane_tty}'     | grep -iqE '^[^TXZ ]+ +(\S+\/)?g?(view|n?vim?x?)(diff)?$'
+ENV no_proxy=127.0.0.1,localhost
+ENV tmux_version=$(tmux -V | sed -En "s/^tmux ([0-9]+(.[0-9]+)?).*/\1/p")
+running "cc" "-O0" "-ffunction-sections" "-fdata-sections" "-fPIC" "-g" "-fno-omit-frame-pointer" "-m64" "-I" "include" "-Wall" "-Wextra" "-pedantic" "-pedantic-errors" "-Wall" "-Wextra" "-Wcast-align" "-Wcast-qual" "-Wconversion" "-Wenum-compare" "-Wfloat-equal" "-Wformat=2" "-Winline" "-Winvalid-pch" "-Wmissing-field-initializers" "-Wmissing-include-dirs" "-Wredundant-decls" "-Wshadow" "-Wsign-compare" "-Wsign-conversion" "-Wundef" "-Wuninitialized" "-Wwrite-strings" "-fno-strict-aliasing" "-fvisibility=hidden" "-fstack-protector" "-g3" "-DNDEBUG" "-c" "-o/home/jacsan/git/sni-proxy/sni_proxy/target/rls/debug/build/ring-2a86ac74414fbfc3/out/aesni-x86_64-elf.o" "/home/jacsan/.cargo/registry/src/github.com-1ecc6299db9ec823/ring-0.16.15/pregenerated/aesni-x86_64-elf.S"
+running "cc" "-O0" "-ffunction-sections" "-fdata-sections" "-fPIC" "-g" "-fno-omit-frame-pointer" "-m64" "-I" "include" "-Wall" "-Wextra" "-pedantic" "-pedantic-errors" "-Wall" "-Wextra" "-Wcast-align" "-Wcast-qual" "-Wconversion" "-Wenum-compare" "-Wfloat-equal" "-Wformat=2" "-Winline" "-Winvalid-pch" "-Wmissing-field-initializers" "-Wmissing-include-dirs" "-Wredundant-decls" "-Wshadow" "-Wsign-compare" "-Wsign-conversion" "-Wundef" "-Wuninitialized" "-Wwrite-strings" "-fno-strict-aliasing" "-fvisibility=hidden" "-fstack-protector" "-g3" "-DNDEBUG" "-c" "-o/home/jacsan/git/sni-proxy/sni_proxy/target/rls/debug/build/ring-2a86ac74414fbfc3/out/vpaes-x86_64-elf.o" "/home/jacsan/.cargo/registry/src/github.com-1ecc6299db9ec823/ring-0.16.15/pregenerated/vpaes-x86_64-elf.S"
+running "cc" "-O0" "-ffunction-sections" "-fdata-sections" "-fPIC" "-g" "-fno-omit-frame-pointer" "-m64" "-I" "include" "-Wall" "-Wextra" "-pedantic" "-pedantic-errors" "-Wall" "-Wextra" "-Wcast-align" "-Wcast-qual" "-Wconversion" "-Wenum-compare" "-Wfloat-equal" "-Wformat=2" "-Winline" "-Winvalid-pch" "-Wmissing-field-initializers" "-Wmissing-include-dirs" "-Wredundant-decls" "-Wshadow" "-Wsign-compare" "-Wsign-conversion" "-Wundef" "-Wuninitialized" "-Wwrite-strings" "-fno-strict-aliasing" "-fvisibility=hidden" "-fstack-protector" "-g3" "-DNDEBUG" "-c" "-o/home/jacsan/git/sni-proxy/sni_proxy/target/rls/debug/build/ring-2a86ac74414fbfc3/out/x86_64-mont-elf.o" "/home/jacsan/.cargo/registry/src/github.com-1ecc6299db9ec823/ring-0.16.15/pregenerated/x86_64-mont-elf.S"
+running "cc" "-O0" "-ffunction-sections" "-fdata-sections" "-fPIC" "-g" "-fno-omit-frame-pointer" "-m64" "-I" "include" "-Wall" "-Wextra" "-pedantic" "-pedantic-errors" "-Wall" "-Wextra" "-Wcast-align" "-Wcast-qual" "-Wconversion" "-Wenum-compare" "-Wfloat-equal" "-Wformat=2" "-Winline" "-Winvalid-pch" "-Wmissing-field-initializers" "-Wmissing-include-dirs" "-Wredundant-decls" "-Wshadow" "-Wsign-compare" "-Wsign-conversion" "-Wundef" "-Wuninitialized" "-Wwrite-strings" "-fno-strict-aliasing" "-fvisibility=hidden" "-fstack-protector" "-g3" "-DNDEBUG" "-c" "-o/home/jacsan/git/sni-proxy/sni_proxy/target/rls/debug/build/ring-2a86ac74414fbfc3/out/x86_64-mont5-elf.o" "/home/jacsan/.cargo/registry/src/github.com-1ecc6299db9ec823/ring-0.16.15/pregenerated/x86_64-mont5-elf.S"
+running "cc" "-O0" "-ffunction-sections" "-fdata-sections" "-fPIC" "-g" "-fno-omit-frame-pointer" "-m64" "-I" "include" "-Wall" "-Wextra" "-pedantic" "-pedantic-errors" "-Wall" "-Wextra" "-Wcast-align" "-Wcast-qual" "-Wconversion" "-Wenum-compare" "-Wfloat-equal" "-Wformat=2" "-Winline" "-Winvalid-pch" "-Wmissing-field-initializers" "-Wmissing-include-dirs" "-Wredundant-decls" "-Wshadow" "-Wsign-compare" "-Wsign-conversion" "-Wundef" "-Wuninitialized" "-Wwrite-strings" "-fno-strict-aliasing" "-fvisibility=hidden" "-fstack-protector" "-g3" "-DNDEBUG" "-c" "-o/home/jacsan/git/sni-proxy/sni_proxy/target/rls/debug/build/ring-2a86ac74414fbfc3/out/chacha-x86_64-elf.o" "/home/jacsan/.cargo/registry/src/github.com-1ecc6299db9ec823/ring-0.16.15/pregenerated/chacha-x86_64-elf.S"
+running "cc" "-O0" "-ffunction-sections" "-fdata-sections" "-fPIC" "-g" "-fno-omit-frame-pointer" "-m64" "-I" "include" "-Wall" "-Wextra" "-pedantic" "-pedantic-errors" "-Wall" "-Wextra" "-Wcast-align" "-Wcast-qual" "-Wconversion" "-Wenum-compare" "-Wfloat-equal" "-Wformat=2" "-Winline" "-Winvalid-pch" "-Wmissing-field-initializers" "-Wmissing-include-dirs" "-Wredundant-decls" "-Wshadow" "-Wsign-compare" "-Wsign-conversion" "-Wundef" "-Wuninitialized" "-Wwrite-strings" "-fno-strict-aliasing" "-fvisibility=hidden" "-fstack-protector" "-g3" "-DNDEBUG" "-c" "-o/home/jacsan/git/sni-proxy/sni_proxy/target/rls/debug/build/ring-2a86ac74414fbfc3/out/p256-x86_64-asm-elf.o" "/home/jacsan/.cargo/registry/src/github.com-1ecc6299db9ec823/ring-0.16.15/pregenerated/p256-x86_64-asm-elf.S"
+running "cc" "-O0" "-ffunction-sections" "-fdata-sections" "-fPIC" "-g" "-fno-omit-frame-pointer" "-m64" "-I" "include" "-Wall" "-Wextra" "-pedantic" "-pedantic-errors" "-Wall" "-Wextra" "-Wcast-align" "-Wcast-qual" "-Wconversion" "-Wenum-compare" "-Wfloat-equal" "-Wformat=2" "-Winline" "-Winvalid-pch" "-Wmissing-field-initializers" "-Wmissing-include-dirs" "-Wredundant-decls" "-Wshadow" "-Wsign-compare" "-Wsign-conversion" "-Wundef" "-Wuninitialized" "-Wwrite-strings" "-fno-strict-aliasing" "-fvisibility=hidden" "-fstack-protector" "-g3" "-DNDEBUG" "-c" "-o/home/jacsan/git/sni-proxy/sni_proxy/target/rls/debug/build/ring-2a86ac74414fbfc3/out/aesni-gcm-x86_64-elf.o" "/home/jacsan/.cargo/registry/src/github.com-1ecc6299db9ec823/ring-0.16.15/pregenerated/aesni-gcm-x86_64-elf.S"
+running "cc" "-O0" "-ffunction-sections" "-fdata-sections" "-fPIC" "-g" "-fno-omit-frame-pointer" "-m64" "-I" "include" "-Wall" "-Wextra" "-pedantic" "-pedantic-errors" "-Wall" "-Wextra" "-Wcast-align" "-Wcast-qual" "-Wconversion" "-Wenum-compare" "-Wfloat-equal" "-Wformat=2" "-Winline" "-Winvalid-pch" "-Wmissing-field-initializers" "-Wmissing-include-dirs" "-Wredundant-decls" "-Wshadow" "-Wsign-compare" "-Wsign-conversion" "-Wundef" "-Wuninitialized" "-Wwrite-strings" "-fno-strict-aliasing" "-fvisibility=hidden" "-fstack-protector" "-g3" "-DNDEBUG" "-c" "-o/home/jacsan/git/sni-proxy/sni_proxy/target/rls/debug/build/ring-2a86ac74414fbfc3/out/ghash-x86_64-elf.o" "/home/jacsan/.cargo/registry/src/github.com-1ecc6299db9ec823/ring-0.16.15/pregenerated/ghash-x86_64-elf.S"
+running "cc" "-O0" "-ffunction-sections" "-fdata-sections" "-fPIC" "-g" "-fno-omit-frame-pointer" "-m64" "-I" "include" "-Wall" "-Wextra" "-pedantic" "-pedantic-errors" "-Wall" "-Wextra" "-Wcast-align" "-Wcast-qual" "-Wconversion" "-Wenum-compare" "-Wfloat-equal" "-Wformat=2" "-Winline" "-Winvalid-pch" "-Wmissing-field-initializers" "-Wmissing-include-dirs" "-Wredundant-decls" "-Wshadow" "-Wsign-compare" "-Wsign-conversion" "-Wundef" "-Wuninitialized" "-Wwrite-strings" "-fno-strict-aliasing" "-fvisibility=hidden" "-fstack-protector" "-g3" "-DNDEBUG" "-c" "-o/home/jacsan/git/sni-proxy/sni_proxy/target/rls/debug/build/ring-2a86ac74414fbfc3/out/poly1305-x86_64-elf.o" "/home/jacsan/.cargo/registry/src/github.com-1ecc6299db9ec823/ring-0.16.15/pregenerated/poly1305-x86_64-elf.S"
+running "cc" "-O0" "-ffunction-sections" "-fdata-sections" "-fPIC" "-g" "-fno-omit-frame-pointer" "-m64" "-I" "include" "-Wall" "-Wextra" "-pedantic" "-pedantic-errors" "-Wall" "-Wextra" "-Wcast-align" "-Wcast-qual" "-Wconversion" "-Wenum-compare" "-Wfloat-equal" "-Wformat=2" "-Winline" "-Winvalid-pch" "-Wmissing-field-initializers" "-Wmissing-include-dirs" "-Wredundant-decls" "-Wshadow" "-Wsign-compare" "-Wsign-conversion" "-Wundef" "-Wuninitialized" "-Wwrite-strings" "-fno-strict-aliasing" "-fvisibility=hidden" "-fstack-protector" "-g3" "-DNDEBUG" "-c" "-o/home/jacsan/git/sni-proxy/sni_proxy/target/rls/debug/build/ring-2a86ac74414fbfc3/out/sha512-x86_64-elf.o" "/home/jacsan/.cargo/registry/src/github.com-1ecc6299db9ec823/ring-0.16.15/pregenerated/sha512-x86_64-elf.S"
+running "cc" "-O0" "-ffunction-sections" "-fdata-sections" "-fPIC" "-g" "-fno-omit-frame-pointer" "-m64" "-I" "include" "-Wall" "-Wextra" "-pedantic" "-pedantic-errors" "-Wall" "-Wextra" "-Wcast-align" "-Wcast-qual" "-Wconversion" "-Wenum-compare" "-Wfloat-equal" "-Wformat=2" "-Winline" "-Winvalid-pch" "-Wmissing-field-initializers" "-Wmissing-include-dirs" "-Wredundant-decls" "-Wshadow" "-Wsign-compare" "-Wsign-conversion" "-Wundef" "-Wuninitialized" "-Wwrite-strings" "-fno-strict-aliasing" "-fvisibility=hidden" "-fstack-protector" "-g3" "-DNDEBUG" "-c" "-o/home/jacsan/git/sni-proxy/sni_proxy/target/rls/debug/build/ring-2a86ac74414fbfc3/out/sha256-x86_64-elf.o" "/home/jacsan/.cargo/registry/src/github.com-1ecc6299db9ec823/ring-0.16.15/pregenerated/sha256-x86_64-elf.S"
+running "cc" "-O0" "-ffunction-sections" "-fdata-sections" "-fPIC" "-g" "-fno-omit-frame-pointer" "-m64" "-I" "include" "-Wall" "-Wextra" "-std=c1x" "-Wbad-function-cast" "-Wnested-externs" "-Wstrict-prototypes" "-pedantic" "-pedantic-errors" "-Wall" "-Wextra" "-Wcast-align" "-Wcast-qual" "-Wconversion" "-Wenum-compare" "-Wfloat-equal" "-Wformat=2" "-Winline" "-Winvalid-pch" "-Wmissing-field-initializers" "-Wmissing-include-dirs" "-Wredundant-decls" "-Wshadow" "-Wsign-compare" "-Wsign-conversion" "-Wundef" "-Wuninitialized" "-Wwrite-strings" "-fno-strict-aliasing" "-fvisibility=hidden" "-fstack-protector" "-g3" "-DNDEBUG" "-c" "-o/home/jacsan/git/sni-proxy/sni_proxy/target/rls/debug/build/ring-2a86ac74414fbfc3/out/aes_nohw.o" "crypto/fipsmodule/aes/aes_nohw.c"
+running "cc" "-O0" "-ffunction-sections" "-fdata-sections" "-fPIC" "-g" "-fno-omit-frame-pointer" "-m64" "-I" "include" "-Wall" "-Wextra" "-std=c1x" "-Wbad-function-cast" "-Wnested-externs" "-Wstrict-prototypes" "-pedantic" "-pedantic-errors" "-Wall" "-Wextra" "-Wcast-align" "-Wcast-qual" "-Wconversion" "-Wenum-compare" "-Wfloat-equal" "-Wformat=2" "-Winline" "-Winvalid-pch" "-Wmissing-field-initializers" "-Wmissing-include-dirs" "-Wredundant-decls" "-Wshadow" "-Wsign-compare" "-Wsign-conversion" "-Wundef" "-Wuninitialized" "-Wwrite-strings" "-fno-strict-aliasing" "-fvisibility=hidden" "-fstack-protector" "-g3" "-DNDEBUG" "-c" "-o/home/jacsan/git/sni-proxy/sni_proxy/target/rls/debug/build/ring-2a86ac74414fbfc3/out/montgomery.o" "crypto/fipsmodule/bn/montgomery.c"
+running "cc" "-O0" "-ffunction-sections" "-fdata-sections" "-fPIC" "-g" "-fno-omit-frame-pointer" "-m64" "-I" "include" "-Wall" "-Wextra" "-std=c1x" "-Wbad-function-cast" "-Wnested-externs" "-Wstrict-prototypes" "-pedantic" "-pedantic-errors" "-Wall" "-Wextra" "-Wcast-align" "-Wcast-qual" "-Wconversion" "-Wenum-compare" "-Wfloat-equal" "-Wformat=2" "-Winline" "-Winvalid-pch" "-Wmissing-field-initializers" "-Wmissing-include-dirs" "-Wredundant-decls" "-Wshadow" "-Wsign-compare" "-Wsign-conversion" "-Wundef" "-Wuninitialized" "-Wwrite-strings" "-fno-strict-aliasing" "-fvisibility=hidden" "-fstack-protector" "-g3" "-DNDEBUG" "-c" "-o/home/jacsan/git/sni-proxy/sni_proxy/target/rls/debug/build/ring-2a86ac74414fbfc3/out/montgomery_inv.o" "crypto/fipsmodule/bn/montgomery_inv.c"
+running "cc" "-O0" "-ffunction-sections" "-fdata-sections" "-fPIC" "-g" "-fno-omit-frame-pointer" "-m64" "-I" "include" "-Wall" "-Wextra" "-std=c1x" "-Wbad-function-cast" "-Wnested-externs" "-Wstrict-prototypes" "-pedantic" "-pedantic-errors" "-Wall" "-Wextra" "-Wcast-align" "-Wcast-qual" "-Wconversion" "-Wenum-compare" "-Wfloat-equal" "-Wformat=2" "-Winline" "-Winvalid-pch" "-Wmissing-field-initializers" "-Wmissing-include-dirs" "-Wredundant-decls" "-Wshadow" "-Wsign-compare" "-Wsign-conversion" "-Wundef" "-Wuninitialized" "-Wwrite-strings" "-fno-strict-aliasing" "-fvisibility=hidden" "-fstack-protector" "-g3" "-DNDEBUG" "-c" "-o/home/jacsan/git/sni-proxy/sni_proxy/target/rls/debug/build/ring-2a86ac74414fbfc3/out/limbs.o" "crypto/limbs/limbs.c"
+running "cc" "-O0" "-ffunction-sections" "-fdata-sections" "-fPIC" "-g" "-fno-omit-frame-pointer" "-m64" "-I" "include" "-Wall" "-Wextra" "-std=c1x" "-Wbad-function-cast" "-Wnested-externs" "-Wstrict-prototypes" "-pedantic" "-pedantic-errors" "-Wall" "-Wextra" "-Wcast-align" "-Wcast-qual" "-Wconversion" "-Wenum-compare" "-Wfloat-equal" "-Wformat=2" "-Winline" "-Winvalid-pch" "-Wmissing-field-initializers" "-Wmissing-include-dirs" "-Wredundant-decls" "-Wshadow" "-Wsign-compare" "-Wsign-conversion" "-Wundef" "-Wuninitialized" "-Wwrite-strings" "-fno-strict-aliasing" "-fvisibility=hidden" "-fstack-protector" "-g3" "-DNDEBUG" "-c" "-o/home/jacsan/git/sni-proxy/sni_proxy/target/rls/debug/build/ring-2a86ac74414fbfc3/out/mem.o" "crypto/mem.c"
+running "cc" "-O0" "-ffunction-sections" "-fdata-sections" "-fPIC" "-g" "-fno-omit-frame-pointer" "-m64" "-I" "include" "-Wall" "-Wextra" "-std=c1x" "-Wbad-function-cast" "-Wnested-externs" "-Wstrict-prototypes" "-pedantic" "-pedantic-errors" "-Wall" "-Wextra" "-Wcast-align" "-Wcast-qual" "-Wconversion" "-Wenum-compare" "-Wfloat-equal" "-Wformat=2" "-Winline" "-Winvalid-pch" "-Wmissing-field-initializers" "-Wmissing-include-dirs" "-Wredundant-decls" "-Wshadow" "-Wsign-compare" "-Wsign-conversion" "-Wundef" "-Wuninitialized" "-Wwrite-strings" "-fno-strict-aliasing" "-fvisibility=hidden" "-fstack-protector" "-g3" "-DNDEBUG" "-c" "-o/home/jacsan/git/sni-proxy/sni_proxy/target/rls/debug/build/ring-2a86ac74414fbfc3/out/crypto.o" "crypto/crypto.c"
+running "cc" "-O0" "-ffunction-sections" "-fdata-sections" "-fPIC" "-g" "-fno-omit-frame-pointer" "-m64" "-I" "include" "-Wall" "-Wextra" "-std=c1x" "-Wbad-function-cast" "-Wnested-externs" "-Wstrict-prototypes" "-pedantic" "-pedantic-errors" "-Wall" "-Wextra" "-Wcast-align" "-Wcast-qual" "-Wconversion" "-Wenum-compare" "-Wfloat-equal" "-Wformat=2" "-Winline" "-Winvalid-pch" "-Wmissing-field-initializers" "-Wmissing-include-dirs" "-Wredundant-decls" "-Wshadow" "-Wsign-compare" "-Wsign-conversion" "-Wundef" "-Wuninitialized" "-Wwrite-strings" "-fno-strict-aliasing" "-fvisibility=hidden" "-fstack-protector" "-g3" "-DNDEBUG" "-c" "-o/home/jacsan/git/sni-proxy/sni_proxy/target/rls/debug/build/ring-2a86ac74414fbfc3/out/curve25519.o" "crypto/curve25519/curve25519.c"
+running "cc" "-O0" "-ffunction-sections" "-fdata-sections" "-fPIC" "-g" "-fno-omit-frame-pointer" "-m64" "-I" "include" "-Wall" "-Wextra" "-std=c1x" "-Wbad-function-cast" "-Wnested-externs" "-Wstrict-prototypes" "-pedantic" "-pedantic-errors" "-Wall" "-Wextra" "-Wcast-align" "-Wcast-qual" "-Wconversion" "-Wenum-compare" "-Wfloat-equal" "-Wformat=2" "-Winline" "-Winvalid-pch" "-Wmissing-field-initializers" "-Wmissing-include-dirs" "-Wredundant-decls" "-Wshadow" "-Wsign-compare" "-Wsign-conversion" "-Wundef" "-Wuninitialized" "-Wwrite-strings" "-fno-strict-aliasing" "-fvisibility=hidden" "-fstack-protector" "-g3" "-DNDEBUG" "-c" "-o/home/jacsan/git/sni-proxy/sni_proxy/target/rls/debug/build/ring-2a86ac74414fbfc3/out/ecp_nistz.o" "crypto/fipsmodule/ec/ecp_nistz.c"
+running "cc" "-O0" "-ffunction-sections" "-fdata-sections" "-fPIC" "-g" "-fno-omit-frame-pointer" "-m64" "-I" "include" "-Wall" "-Wextra" "-std=c1x" "-Wbad-function-cast" "-Wnested-externs" "-Wstrict-prototypes" "-pedantic" "-pedantic-errors" "-Wall" "-Wextra" "-Wcast-align" "-Wcast-qual" "-Wconversion" "-Wenum-compare" "-Wfloat-equal" "-Wformat=2" "-Winline" "-Winvalid-pch" "-Wmissing-field-initializers" "-Wmissing-include-dirs" "-Wredundant-decls" "-Wshadow" "-Wsign-compare" "-Wsign-conversion" "-Wundef" "-Wuninitialized" "-Wwrite-strings" "-fno-strict-aliasing" "-fvisibility=hidden" "-fstack-protector" "-g3" "-DNDEBUG" "-c" "-o/home/jacsan/git/sni-proxy/sni_proxy/target/rls/debug/build/ring-2a86ac74414fbfc3/out/ecp_nistz256.o" "crypto/fipsmodule/ec/ecp_nistz256.c"
+running "cc" "-O0" "-ffunction-sections" "-fdata-sections" "-fPIC" "-g" "-fno-omit-frame-pointer" "-m64" "-I" "include" "-Wall" "-Wextra" "-std=c1x" "-Wbad-function-cast" "-Wnested-externs" "-Wstrict-prototypes" "-pedantic" "-pedantic-errors" "-Wall" "-Wextra" "-Wcast-align" "-Wcast-qual" "-Wconversion" "-Wenum-compare" "-Wfloat-equal" "-Wformat=2" "-Winline" "-Winvalid-pch" "-Wmissing-field-initializers" "-Wmissing-include-dirs" "-Wredundant-decls" "-Wshadow" "-Wsign-compare" "-Wsign-conversion" "-Wundef" "-Wuninitialized" "-Wwrite-strings" "-fno-strict-aliasing" "-fvisibility=hidden" "-fstack-protector" "-g3" "-DNDEBUG" "-c" "-o/home/jacsan/git/sni-proxy/sni_proxy/target/rls/debug/build/ring-2a86ac74414fbfc3/out/gfp_p256.o" "crypto/fipsmodule/ec/gfp_p256.c"
+running "cc" "-O0" "-ffunction-sections" "-fdata-sections" "-fPIC" "-g" "-fno-omit-frame-pointer" "-m64" "-I" "include" "-Wall" "-Wextra" "-std=c1x" "-Wbad-function-cast" "-Wnested-externs" "-Wstrict-prototypes" "-pedantic" "-pedantic-errors" "-Wall" "-Wextra" "-Wcast-align" "-Wcast-qual" "-Wconversion" "-Wenum-compare" "-Wfloat-equal" "-Wformat=2" "-Winline" "-Winvalid-pch" "-Wmissing-field-initializers" "-Wmissing-include-dirs" "-Wredundant-decls" "-Wshadow" "-Wsign-compare" "-Wsign-conversion" "-Wundef" "-Wuninitialized" "-Wwrite-strings" "-fno-strict-aliasing" "-fvisibility=hidden" "-fstack-protector" "-g3" "-DNDEBUG" "-c" "-o/home/jacsan/git/sni-proxy/sni_proxy/target/rls/debug/build/ring-2a86ac74414fbfc3/out/gfp_p384.o" "crypto/fipsmodule/ec/gfp_p384.c"
+running "cc" "-O0" "-ffunction-sections" "-fdata-sections" "-fPIC" "-g" "-fno-omit-frame-pointer" "-m64" "-I" "include" "-Wall" "-Wextra" "-std=c1x" "-Wbad-function-cast" "-Wnested-externs" "-Wstrict-prototypes" "-pedantic" "-pedantic-errors" "-Wall" "-Wextra" "-Wcast-align" "-Wcast-qual" "-Wconversion" "-Wenum-compare" "-Wfloat-equal" "-Wformat=2" "-Winline" "-Winvalid-pch" "-Wmissing-field-initializers" "-Wmissing-include-dirs" "-Wredundant-decls" "-Wshadow" "-Wsign-compare" "-Wsign-conversion" "-Wundef" "-Wuninitialized" "-Wwrite-strings" "-fno-strict-aliasing" "-fvisibility=hidden" "-fstack-protector" "-g3" "-DNDEBUG" "-c" "-o/home/jacsan/git/sni-proxy/sni_proxy/target/rls/debug/build/ring-2a86ac74414fbfc3/out/cpu-intel.o" "crypto/cpu-intel.c"
+running "cc" "-O0" "-ffunction-sections" "-fdata-sections" "-fPIC" "-g" "-fno-omit-frame-pointer" "-m64" "-I" "include" "-Wall" "-Wextra" "-std=c1x" "-Wbad-function-cast" "-Wnested-externs" "-Wstrict-prototypes" "-pedantic" "-pedantic-errors" "-Wall" "-Wextra" "-Wcast-align" "-Wcast-qual" "-Wconversion" "-Wenum-compare" "-Wfloat-equal" "-Wformat=2" "-Winline" "-Winvalid-pch" "-Wmissing-field-initializers" "-Wmissing-include-dirs" "-Wredundant-decls" "-Wshadow" "-Wsign-compare" "-Wsign-conversion" "-Wundef" "-Wuninitialized" "-Wwrite-strings" "-fno-strict-aliasing" "-fvisibility=hidden" "-fstack-protector" "-g3" "-DNDEBUG" "-c" "-o/home/jacsan/git/sni-proxy/sni_proxy/target/rls/debug/build/ring-2a86ac74414fbfc3/out/constant_time_test.o" "crypto/constant_time_test.c"

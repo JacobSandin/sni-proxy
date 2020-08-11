@@ -1,0 +1,2 @@
+cargo:rustc-cfg=mtsafe_dlerror
+cargo:rustc-link-lib=dl
