@@ -303,7 +303,7 @@ impl ConnectionSource {
         while self.send_to_client.len() > 0 {
             let buf = self.send_to_client.pop_front();
             let len = buf.clone().unwrap().len();
-            error!("Buf :\r\n{}", String::from_utf8_lossy(&buf.clone().unwrap()[0..min(512,len)]));
+            debug!("Sending response http:\r\n{}", String::from_utf8_lossy(&buf.clone().unwrap()[0..min(512,len)]));
             let res = self.server_stream.write_all(&buf.unwrap().as_mut_slice());
             match res {
                 Ok(()) => {
@@ -436,7 +436,7 @@ impl ConnectionSource {
             let resp = format!("HTTP/1.1 301 Moved Permanently\r\nLocation: https://{}{}\r\n\r\n",&self.request_host,&self.http_get_path); 
             let buf_rep:Vec<u8> = resp.clone().into_bytes();
             self.send_to_client.push_back(buf_rep.clone());
-            println!("{}",resp);
+            //println!("{}",resp);
             self.http_writer();
             return true;
         }
