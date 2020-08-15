@@ -910,14 +910,14 @@ impl ConnectionSource {
             trace!(target: &self.server_token.0.to_string(),"Entering HTTP_R ({})", success);
             if self.http_reader() {
                 if self.set_forward_adress() {
-                    //                    if !self.send_301_reply() {
-                    &self.send_to_farward.push_back(self.buf_forward.clone());
-                    &self.buf_forward.clear();
-                    self.activate_forward_stream(registry);
-                    //                    } else {
-                    //                        &self.buf_forward.clear();
-                    //                        self.activate_forward_stream(registry);
-                    //                    }
+                    if !self.send_301_reply() {
+                        &self.send_to_farward.push_back(self.buf_forward.clone());
+                        &self.buf_forward.clear();
+                        self.activate_forward_stream(registry);
+                    } else {
+                        &self.buf_forward.clear();
+                        self.activate_forward_stream(registry);
+                    }
                 }
 
                 trace!(target: &self.server_token.0.to_string(),"HTTP_R finished reading http");
