@@ -311,9 +311,10 @@ impl ConnectionSource {
                     self.activity_timeout = Some(Instant::now());
                     return Some(true);
                 }
-                //                Err(e) if e.kind() == io::ErrorKind::WouldBlock => {
-                //                    self.activity_timeout = Some(Instant::now());
-                //                }
+                Err(e) if e.kind() == io::ErrorKind::WouldBlock => {
+                    self.activity_timeout = Some(Instant::now());
+                    return Some(false);
+                }
                 Err(e) => {
                     error!(target: &self.server_token.0.to_string(),"http_writer Unknown error: \r\n{:?}",e);
                     return Some(false);
