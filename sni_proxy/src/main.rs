@@ -21,10 +21,10 @@
 
 //#[macro_use]
 // extern crate mysql;
-mod connection_source;
-mod load_single_cert;
 mod cache_test;
+mod connection_source;
 mod http_parser;
+mod load_single_cert;
 #[macro_use]
 mod macros;
 //mod cert_database;
@@ -50,7 +50,6 @@ extern crate log;
 use log::{debug, error, info, trace, warn};
 
 extern crate simplelog;
-
 
 use dotenv;
 use env_logger::activate_env_logger;
@@ -87,7 +86,7 @@ fn run() -> Result<(), Box<dyn Error>> {
 
     trace!(target: "0","Poll creating new");
     let mut poll = Poll::new()?;
-    
+
     trace!(target: "0","Events capacity 128");
     let mut events = Events::with_capacity(16192);
 
@@ -136,7 +135,6 @@ fn run() -> Result<(), Box<dyn Error>> {
         .unwrap_or(String::from("false"))
         .parse()
         .unwrap_or(false);
-
 
     let test = dotenv::var(&"CERT_KEY_FILE").unwrap_or(String::from("none"));
 

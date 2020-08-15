@@ -10,20 +10,17 @@ use rustls::{Session, TLSError};
 //use cmp::min;
 use httparse::{self};
 use std::{
+    cmp::min,
     //    cmp,
     collections::{HashMap, VecDeque},
     io,
     io::{Read, Write},
     net,
     sync::Arc,
-    time::Instant, cmp::min,
+    time::Instant,
 };
 
-
-use crate::{
-    ok_macro, process_error_handling,
-    read_error_handling, write_error_handling,
-};
+use crate::{ok_macro, process_error_handling, read_error_handling, write_error_handling};
 
 use interfaces::Cacher;
 
@@ -31,6 +28,7 @@ use interfaces::Cacher;
 pub struct ConnectionSource {
     pub server_stream: TcpStream,
     pub tls_session: Option<rustls::ServerSession>,
+
     pub server_token: Token,
     pub forward_token: Token,
     pub forward_host: String,
@@ -60,7 +58,6 @@ impl Source for ConnectionSource {
     // Registers the stream for the first time or after a deregister is called.
     // First we test if it is the server_stream orh the forward_stream that needs
     // registering and then we register the appropriate stream.
-
     fn register(
         &mut self,
         registry: &Registry,
@@ -214,7 +211,7 @@ impl ConnectionSource {
                     trace!(target: &self.server_token.0.to_string(),"https_reader Would block\r\n{:?}",e);
                     if self.buf_forward.len() > 0 {
                         //self.activity_timeout= Instant::now();
-                       
+
                         return true;
                     }
                     //return false;
@@ -242,7 +239,7 @@ impl ConnectionSource {
                 .write_all(&buf.unwrap().as_mut_slice());
             match res {
                 Ok(()) => {
-                    //self.activity_timeout= Instant::now();
+                    //self.activity_timeout = Instant::now();
                     self.bytes_received = self.bytes_received + len;
                     self.activity_timeout = Some(Instant::now());
                     return Some(true);
@@ -303,7 +300,10 @@ impl ConnectionSource {
         while self.send_to_client.len() > 0 {
             let buf = self.send_to_client.pop_front();
             let len = buf.clone().unwrap().len();
-            debug!("Sending response http:\r\n{}", String::from_utf8_lossy(&buf.clone().unwrap()[0..min(512,len)]));
+            //            error!(
+            //                "Sending response http:\r\n{}",
+            //                String::from_utf8_lossy(&buf.clone().unwrap()[0..min(512, len)])
+            //            );
             let res = self.server_stream.write_all(&buf.unwrap().as_mut_slice());
             match res {
                 Ok(()) => {
@@ -311,6 +311,9 @@ impl ConnectionSource {
                     self.activity_timeout = Some(Instant::now());
                     return Some(true);
                 }
+                //                Err(e) if e.kind() == io::ErrorKind::WouldBlock => {
+                //                    self.activity_timeout = Some(Instant::now());
+                //                }
                 Err(e) => {
                     error!(target: &self.server_token.0.to_string(),"http_writer Unknown error: \r\n{:?}",e);
                     return Some(false);
@@ -335,7 +338,7 @@ impl ConnectionSource {
                     }
                     trace!(target: &self.server_token.0.to_string(),"http_fwd_reader read {}",n);
                     if n < 1024 {
-                         self.print_header(&self.buf_client);
+                        self.print_header(&self.buf_client);
                         //self.activity_timeout= Instant::now();
                         return true;
                     }
@@ -382,10 +385,13 @@ impl ConnectionSource {
         }
         return true;
     }
-    
+
     fn print_header(&self, buf: &Vec<u8>) {
         if String::from_utf8_lossy(buf.as_slice()).contains("\r\n\r\n") {
-            debug!("Headers:\r\n{}", String::from_utf8_lossy(&buf[0..min(256,buf.len())]));
+            debug!(
+                "Headers:\r\n{}",
+                String::from_utf8_lossy(&buf[0..min(256, buf.len())])
+            );
         }
     }
 
@@ -432,9 +438,33 @@ impl ConnectionSource {
 
 impl ConnectionSource {
     fn send_301_reply(&mut self) -> bool {
-       if self.server_stream.local_addr().unwrap().port() == 80 && dotenv::var("HTTP_REDIRECT_TO_HTTPS").unwrap_or(String::from("")).contains("true") {
-            let resp = format!("HTTP/1.1 301 Moved Permanently\r\nLocation: https://{}{}\r\n\r\n",&self.request_host,&self.http_get_path); 
-            let buf_rep:Vec<u8> = resp.clone().into_bytes();
+        if self.server_stream.local_addr().unwrap().port() == 80
+            && dotenv::var("HTTP_REDIRECT_TO_HTTPS")
+                .unwrap_or(String::from(""))
+                .contains("true")
+        {
+            //IF we have a list of ignore hosts in config
+            //check that first.
+            if !dotenv::var("HTTP_REDIRECT_IGNORE_HOSTS")
+                .unwrap_or("".to_string())
+                .is_empty()
+            {
+                let ignore_list = dotenv::var("HTTP_REDIRECT_IGNORE_HOSTS").unwrap();
+                let ignore_list = ignore_list.split(';');
+
+                for i in ignore_list {
+                    if !i.is_empty() && self.request_host.contains(i) {
+                        println!("I is: {:?} ({:?})", i, self.request_host);
+                        return false;
+                    }
+                }
+            }
+
+            let resp = format!(
+                "HTTP/1.1 301 Moved Permanently\r\nLocation: https://{}{}\r\n\r\n",
+                &self.request_host, &self.http_get_path
+            );
+            let buf_rep: Vec<u8> = resp.clone().into_bytes();
             self.send_to_client.push_back(buf_rep.clone());
             //println!("{}",resp);
             self.http_writer();
@@ -447,7 +477,7 @@ impl ConnectionSource {
     //then in the above write function will send it to the client.
     fn activate_forward_stream(&mut self, registry: &Registry) -> bool {
         trace!("Enter activate_forward_stream");
-        //self.activity_timeout= Instant::now();
+        //self.activity_timeout = Instant::now();
         // Did not help to prevent white pages
         // if self.forward_stream.is_some() {
         //     trace!(target: &self.server_token.0.to_string(),"Seting to none");
@@ -470,7 +500,6 @@ impl ConnectionSource {
                     "Connection established {} -> {}:{} => {}",
                     self.server_stream.peer_addr().expect("Peer_Addr").to_string(),
                       self.request_host, self.server_stream.local_addr().expect("ServerStream").port(),self.forward_host);
-                
 
                 let socket: Result<std::net::SocketAddr, _> = self.forward_host.parse();
                 if socket.is_ok() {
@@ -526,29 +555,27 @@ impl ConnectionSource {
         event: &Event,
         token: Token,
     ) -> Option<bool> {
-
-
-    let lib = match libloading::Library::new(
-        dotenv::var("SNI_CACHE_PLUGIN").unwrap_or(String::from("")),
-    ) {
-        Ok(a) => Some(a),
-        Err(e) => {
-            info!(target: "0","No certificate plugin to load! Error: \r\n {:?}",e);
-            debug!(target: "0","Error: \r\n {:?}",e);
+        let lib = match libloading::Library::new(
+            dotenv::var("SNI_CACHE_PLUGIN").unwrap_or(String::from("")),
+        ) {
+            Ok(a) => Some(a),
+            Err(e) => {
+                info!(target: "0","No certificate plugin to load! Error: \r\n {:?}",e);
+                debug!(target: "0","Error: \r\n {:?}",e);
+                None
+            }
+        };
+        let ch: Option<Box<dyn Cacher>> = if lib.is_some() {
+            let get_cacher: libloading::Symbol<fn() -> Box<dyn Cacher>> =
+                unsafe { lib.as_ref().unwrap().get(b"get_cacher") }.expect("load symbol");
+            let ch = get_cacher();
+            Some(ch)
+        //Create an arc of the forwards
+        } else {
             None
-        }
-    };
-    let ch: Option<Box<dyn Cacher>> = if lib.is_some() {
-        let get_cacher: libloading::Symbol<fn() -> Box<dyn Cacher>> =
-            unsafe { lib.as_ref().unwrap().get(b"get_cacher") }.expect("load symbol");
-        let ch =get_cacher();
-        Some(ch)
-    //Create an arc of the forwards
-    } else {
-        None
-    };
+        };
 
-    let mut cacher = ch.unwrap();
+        let mut cacher = ch.unwrap();
 
         // if token == self.server_token {
         //     self.server_stream.deregister(registry).expect("Expected to deregister server thread on entry!");
@@ -561,7 +588,7 @@ impl ConnectionSource {
         // Too much trace!(target: &self.server_token.0.to_string(),"Main incomming Event: \r\n{:?}",event);
         //TODO set config for connection timout
         if self.activity_timeout.is_some()
-            && self.activity_timeout.unwrap().elapsed().as_millis() > 300
+            && self.activity_timeout.unwrap().elapsed().as_millis() > 3000
         {
             self.closing = true;
         }
@@ -761,8 +788,14 @@ impl ConnectionSource {
 
             if self.http_fwd_reader() {
                 //let mut c = Cacher::new();
-                cacher.cache_update_and_test_path(&self.request_host, &self.forward_host, &self.http_get_path,&self.buf_client.clone())
-                     .expect("Expected cacher to cache_this");
+                cacher
+                    .cache_update_and_test_path(
+                        &self.request_host,
+                        &self.forward_host,
+                        &self.http_get_path,
+                        &self.buf_client.clone(),
+                    )
+                    .expect("Expected cacher to cache_this");
 
                 //try_iterate_bytes(self.buf_client.clone());
 
@@ -783,7 +816,6 @@ impl ConnectionSource {
             trace!(target: &self.server_token.0.to_string(),"Exiting FWD_R ({})", success);
         } //DONE fwd_ok_r
         trace!(target: &self.server_token.0.to_string(),"MAIN closing: ({})", self.closing);
-
 
         /*
 
@@ -842,20 +874,19 @@ impl ConnectionSource {
             if self.https_reader() {
                 //Finished
                 if self.set_forward_adress() {
-                     //let c = Cacher::new();
-                     
-                      let res = cacher.cache_read_path(&self.request_host, &self.http_get_path);
-                      let opt = res.clone();
-                      
-                      //opt
+                    //let c = Cacher::new();
 
+                    let res = cacher.cache_read_path(&self.request_host, &self.http_get_path);
+                    let opt = res.clone();
 
-                     if  opt.is_some() {
-                         let cache = opt.unwrap();
-                         //let cache = cache.clone().unwrap();
-                         self.send_to_client.push_back(cache);
-                         &self.buf_forward.clear();
-                     } else {
+                    //opt
+
+                    if opt.is_some() {
+                        let cache = opt.unwrap();
+                        //let cache = cache.clone().unwrap();
+                        self.send_to_client.push_back(cache);
+                        &self.buf_forward.clear();
+                    } else {
                         &self.send_to_farward.push_back(self.buf_forward.clone());
                         &self.buf_forward.clear();
                         self.activate_forward_stream(registry);
@@ -878,10 +909,15 @@ impl ConnectionSource {
         if http_ok_r {
             trace!(target: &self.server_token.0.to_string(),"Entering HTTP_R ({})", success);
             if self.http_reader() {
-                if self.set_forward_adress() && !self.send_301_reply() {
+                if self.set_forward_adress() {
+                    //                    if !self.send_301_reply() {
                     &self.send_to_farward.push_back(self.buf_forward.clone());
                     &self.buf_forward.clear();
                     self.activate_forward_stream(registry);
+                    //                    } else {
+                    //                        &self.buf_forward.clear();
+                    //                        self.activate_forward_stream(registry);
+                    //                    }
                 }
 
                 trace!(target: &self.server_token.0.to_string(),"HTTP_R finished reading http");
